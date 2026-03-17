@@ -39,11 +39,11 @@ export default function TicketList() {
               key={f}
               onClick={() => setFilter(f)}
               className={`px-3 py-1.5 rounded-lg text-sm capitalize transition-colors ${
-                filter === f ? 'bg-blue-900 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'
+                filter === f ? 'bg-pine-900 text-white' : 'bg-white border text-gray-600 hover:bg-gray-50'
               }`}
             >
               {f.replace('_', ' ')}
-              <span className={`ml-1.5 text-xs ${filter === f ? 'text-blue-200' : 'text-gray-400'}`}>
+              <span className={`ml-1.5 text-xs ${filter === f ? 'text-pine-200' : 'text-gray-400'}`}>
                 {counts[f]}
               </span>
             </button>
@@ -54,7 +54,7 @@ export default function TicketList() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Search tickets…"
-          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-52"
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700 w-52"
         />
       </div>
 
@@ -81,7 +81,7 @@ export default function TicketList() {
                 <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400">{t.id}</td>
                   <td className="px-4 py-3">
-                    <Link to={`/tickets/${t.id}`} className="text-blue-600 hover:underline font-medium">
+                    <Link to={`/tickets/${t.id}`} className="text-pine-700 hover:underline font-medium">
                       {t.title}
                     </Link>
                     {t.ai_attempted === 1 && (

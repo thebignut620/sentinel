@@ -54,7 +54,7 @@ export default function AdminSettings() {
               type="text"
               value={settings.company_name || ''}
               onChange={e => setSettings(s => ({ ...s, company_name: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
               placeholder="e.g. Acme Corp IT"
             />
           </div>
@@ -66,7 +66,7 @@ export default function AdminSettings() {
                 type="button"
                 onClick={() => setSettings(s => ({ ...s, ai_enabled: s.ai_enabled === 'true' ? 'false' : 'true' }))}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  settings.ai_enabled === 'true' ? 'bg-blue-900' : 'bg-gray-300'
+                  settings.ai_enabled === 'true' ? 'bg-pine-900' : 'bg-gray-300'
                 }`}
               >
                 <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
@@ -85,7 +85,7 @@ export default function AdminSettings() {
           <button
             type="submit"
             disabled={saving}
-            className="w-full bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium"
+            className="w-full bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium"
           >
             {saving ? 'Saving…' : 'Save Settings'}
           </button>

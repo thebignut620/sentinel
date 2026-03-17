@@ -22,7 +22,7 @@ export default function MyTickets() {
         <h1 className="text-2xl font-bold text-gray-900">My Tickets</h1>
         <Link
           to="/help"
-          className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          className="bg-pine-900 hover:bg-pine-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           + New Issue
         </Link>
@@ -35,7 +35,7 @@ export default function MyTickets() {
             onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-sm capitalize transition-colors ${
               filter === f
-                ? 'bg-blue-900 text-white'
+                ? 'bg-pine-900 text-white'
                 : 'bg-white border text-gray-600 hover:bg-gray-50'
             }`}
           >
@@ -65,7 +65,7 @@ export default function MyTickets() {
                 <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50">
                   <td className="px-4 py-3 text-gray-400">{t.id}</td>
                   <td className="px-4 py-3">
-                    <Link to={`/tickets/${t.id}`} className="text-blue-600 hover:underline font-medium">
+                    <Link to={`/tickets/${t.id}`} className="text-pine-700 hover:underline font-medium">
                       {t.title}
                     </Link>
                     {t.ai_attempted === 1 && (

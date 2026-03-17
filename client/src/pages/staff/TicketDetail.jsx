@@ -142,7 +142,7 @@ export default function TicketDetail() {
               <div className="space-y-4 mb-5">
                 {ticket.comments.map(c => (
                   <div key={c.id} className="flex gap-3">
-                    <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-medium text-xs shrink-0">
+                    <div className="h-8 w-8 rounded-full bg-pine-100 flex items-center justify-center text-pine-700 font-medium text-xs shrink-0">
                       {c.author_name?.[0]}
                     </div>
                     <div className="flex-1">
@@ -169,13 +169,13 @@ export default function TicketDetail() {
                 value={comment}
                 onChange={e => setComment(e.target.value)}
                 rows={3}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700 resize-none"
                 placeholder="Write a comment…"
               />
               <button
                 type="submit"
                 disabled={!comment.trim() || submitting}
-                className="mt-2 bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
+                className="mt-2 bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
               >
                 Post Comment
               </button>
@@ -195,7 +195,7 @@ export default function TicketDetail() {
                   <select
                     value={editStatus}
                     onChange={e => setEditStatus(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                   >
                     <option value="open">Open</option>
                     <option value="in_progress">In Progress</option>
@@ -209,7 +209,7 @@ export default function TicketDetail() {
                   <select
                     value={editPriority}
                     onChange={e => setEditPriority(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                   >
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -223,7 +223,7 @@ export default function TicketDetail() {
                   <select
                     value={editAssignee}
                     onChange={e => setEditAssignee(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                   >
                     <option value="">— Unassigned —</option>
                     {staffUsers.map(u => (
@@ -239,7 +239,7 @@ export default function TicketDetail() {
                 <button
                   onClick={handleUpdate}
                   disabled={submitting}
-                  className="w-full bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium"
+                  className="w-full bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium"
                 >
                   {submitting ? 'Saving…' : 'Save Changes'}
                 </button>

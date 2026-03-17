@@ -15,7 +15,7 @@ export function StatusBadge({ status }) {
 export function PriorityBadge({ priority }) {
   const styles = {
     low: 'bg-slate-100 text-slate-600',
-    medium: 'bg-blue-100 text-blue-700',
+    medium: 'bg-pine-100 text-pine-700',
     high: 'bg-orange-100 text-orange-700',
     critical: 'bg-red-100 text-red-700',
   };
@@ -29,7 +29,7 @@ export function PriorityBadge({ priority }) {
 export function RoleBadge({ role }) {
   const styles = {
     admin: 'bg-purple-100 text-purple-700',
-    it_staff: 'bg-blue-100 text-blue-700',
+    it_staff: 'bg-pine-100 text-pine-700',
     employee: 'bg-gray-100 text-gray-600',
   };
   return (

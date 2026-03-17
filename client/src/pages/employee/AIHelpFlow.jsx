@@ -69,14 +69,14 @@ export default function AIHelpFlow() {
           onChange={e => setProblem(e.target.value)}
           rows={5}
           disabled={step !== STEPS.INPUT}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50 disabled:text-gray-500 resize-none"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700 disabled:bg-gray-50 disabled:text-gray-500 resize-none"
           placeholder="e.g. My VPN keeps disconnecting after the latest Windows update. I've tried restarting but it still happens."
         />
         {step === STEPS.INPUT && (
           <button
             onClick={handleAskAI}
             disabled={!problem.trim()}
-            className="mt-3 bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            className="mt-3 bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
           >
             Ask AI for Help →
           </button>
@@ -85,11 +85,11 @@ export default function AIHelpFlow() {
 
       {/* Step 2: Thinking */}
       {step === STEPS.THINKING && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 flex items-center gap-4">
-          <div className="animate-spin h-6 w-6 border-2 border-blue-700 border-t-transparent rounded-full shrink-0" />
+        <div className="bg-pine-50 border border-pine-200 rounded-xl p-6 flex items-center gap-4">
+          <div className="animate-spin h-6 w-6 border-2 border-pine-700 border-t-transparent rounded-full shrink-0" />
           <div>
-            <p className="font-medium text-blue-900">Sentinel AI is analysing your issue…</p>
-            <p className="text-sm text-blue-600 mt-0.5">This usually takes a few seconds.</p>
+            <p className="font-medium text-pine-900">Sentinel AI is analysing your issue…</p>
+            <p className="text-sm text-pine-700 mt-0.5">This usually takes a few seconds.</p>
           </div>
         </div>
       )}
@@ -160,7 +160,7 @@ export default function AIHelpFlow() {
                 type="text"
                 value={ticketForm.title}
                 onChange={e => setTicketForm(f => ({ ...f, title: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                 placeholder="Brief summary of your issue"
               />
             </div>
@@ -170,7 +170,7 @@ export default function AIHelpFlow() {
               <select
                 value={ticketForm.priority}
                 onChange={e => setTicketForm(f => ({ ...f, priority: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
               >
                 <option value="low">Low — minor inconvenience</option>
                 <option value="medium">Medium — affecting my work</option>
@@ -183,7 +183,7 @@ export default function AIHelpFlow() {
               <button
                 onClick={handleCreateTicket}
                 disabled={!ticketForm.title.trim() || submitting}
-                className="bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                className="bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
                 {submitting ? 'Submitting…' : 'Submit Ticket'}
               </button>

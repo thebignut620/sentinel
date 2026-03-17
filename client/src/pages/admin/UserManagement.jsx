@@ -85,7 +85,7 @@ export default function UserManagement() {
         <h1 className="text-2xl font-bold text-gray-900">User Management</h1>
         <button
           onClick={openCreate}
-          className="bg-blue-900 hover:bg-blue-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          className="bg-pine-900 hover:bg-pine-800 text-white px-4 py-2 rounded-lg text-sm font-medium"
         >
           + Add User
         </button>
@@ -117,7 +117,7 @@ export default function UserManagement() {
                 <td className="px-4 py-3 text-gray-400">{new Date(u.created_at).toLocaleDateString()}</td>
                 <td className="px-4 py-3">
                   <div className="flex gap-3">
-                    <button onClick={() => openEdit(u)} className="text-blue-600 hover:underline text-xs">
+                    <button onClick={() => openEdit(u)} className="text-pine-700 hover:underline text-xs">
                       Edit
                     </button>
                     {u.id !== currentUser.id && u.is_active && (
@@ -159,7 +159,7 @@ export default function UserManagement() {
                   type="text"
                   value={form.name}
                   onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                   required
                 />
               </div>
@@ -169,7 +169,7 @@ export default function UserManagement() {
                   type="email"
                   value={form.email}
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                   required
                 />
               </div>
@@ -181,7 +181,7 @@ export default function UserManagement() {
                   type="password"
                   value={form.password}
                   onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                   required={!editing}
                   minLength={editing ? 0 : 6}
                 />
@@ -191,7 +191,7 @@ export default function UserManagement() {
                 <select
                   value={form.role}
                   onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
                 >
                   <option value="employee">Employee</option>
                   <option value="it_staff">IT Staff</option>
@@ -202,7 +202,7 @@ export default function UserManagement() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="flex-1 bg-blue-900 hover:bg-blue-800 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium"
+                  className="flex-1 bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium"
                 >
                   {submitting ? 'Saving…' : (editing ? 'Update User' : 'Create User')}
                 </button>

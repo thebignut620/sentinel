@@ -10,8 +10,8 @@ function NavLink({ to, children }) {
       to={to}
       className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
         active
-          ? 'bg-blue-800 text-white'
-          : 'text-blue-100 hover:bg-blue-800/60'
+          ? 'bg-pine-800 text-white'
+          : 'text-pine-100 hover:bg-pine-800/60'
       }`}
     >
       {children}
@@ -31,8 +31,8 @@ export default function Layout() {
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Sidebar */}
-      <aside className="w-56 bg-blue-900 flex flex-col shrink-0">
-        <div className="px-4 py-5 border-b border-blue-800">
+      <aside className="w-56 bg-pine-900 flex flex-col shrink-0">
+        <div className="px-4 py-5 border-b border-pine-800">
           <img src={sentinelLogo} alt="Sentinel" className="h-8 w-auto" />
         </div>
 
@@ -66,14 +66,14 @@ export default function Layout() {
         </nav>
 
         {/* User info */}
-        <div className="p-3 border-t border-blue-800">
+        <div className="p-3 border-t border-pine-800">
           <div className="px-3 py-2 mb-1">
             <p className="text-white text-sm font-medium truncate">{user?.name}</p>
-            <p className="text-blue-300 text-xs capitalize">{user?.role?.replace('_', ' ')}</p>
+            <p className="text-pine-300 text-xs capitalize">{user?.role?.replace('_', ' ')}</p>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full text-left px-3 py-2 text-sm text-blue-200 hover:text-white hover:bg-blue-800 rounded-lg transition-colors"
+            className="w-full text-left px-3 py-2 text-sm text-pine-200 hover:text-white hover:bg-pine-800 rounded-lg transition-colors"
           >
             Sign out
           </button>
