@@ -1,10 +1,13 @@
 import sqlite3Pkg from 'sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { mkdirSync } from 'fs';
 
 const { Database } = sqlite3Pkg;
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const rawDb = new Database(join(__dirname, '../data/sentinel.db'));
+const dataDir = join(__dirname, '../data');
+mkdirSync(dataDir, { recursive: true });
+const rawDb = new Database(join(dataDir, 'sentinel.db'));
 
 rawDb.run('PRAGMA journal_mode = WAL');
 rawDb.run('PRAGMA foreign_keys = ON');
