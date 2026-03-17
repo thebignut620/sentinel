@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import sentinelLogo from '../assets/sentinel_logo.png';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
@@ -29,10 +30,8 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-950 to-blue-800 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🛡</div>
-          <h1 className="text-2xl font-bold text-gray-900">Sentinel</h1>
-          <p className="text-gray-500 text-sm mt-1">IT Helpdesk System</p>
+        <div className="flex justify-center mb-8">
+          <img src={sentinelLogo} alt="Sentinel" className="h-24 w-auto" />
         </div>
 
         {error && (

@@ -1,4 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import sentinelLogo from '../assets/sentinel_logo.png';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 function NavLink({ to, children }) {
@@ -32,8 +33,7 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="w-56 bg-blue-900 flex flex-col shrink-0">
         <div className="px-4 py-5 border-b border-blue-800">
-          <h1 className="text-white font-bold text-lg tracking-wide">🛡 Sentinel</h1>
-          <p className="text-blue-300 text-xs mt-0.5">IT Helpdesk</p>
+          <img src={sentinelLogo} alt="Sentinel" className="h-8 w-auto" />
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
