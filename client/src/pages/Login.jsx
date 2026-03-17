@@ -31,7 +31,7 @@ export default function Login() {
     <div style={{ backgroundColor: '#f0f0f0' }} className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-md">
         <div className="flex justify-center mb-6">
-          <img src={sentinelLogo} alt="Sentinel" className="h-36 w-auto" />
+          <img src={sentinelLogo} alt="Sentinel" className="h-64 w-auto" />
         </div>
         <div className="bg-white rounded-2xl shadow-xl p-10">
 
