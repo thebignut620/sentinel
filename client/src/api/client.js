@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api' });
+const api = axios.create({ baseURL: 'https://sentinel-production-7d11.up.railway.app/api' });
 
 // Inject token from localStorage on every request
 api.interceptors.request.use(config => {
