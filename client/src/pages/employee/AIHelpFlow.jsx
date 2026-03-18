@@ -71,7 +71,7 @@ export default function AIHelpFlow() {
       setStep(STEPS.SOLUTION);
     } catch (err) {
       setAiResult({ resolved: false, suggestion: null });
-      setError(err.response?.data?.error || 'ATLAS is temporarily offline.');
+      setError(err.response?.data?.error || 'ATLAS is temporarily offline. You can still submit a ticket below.');
       setStep(STEPS.SOLUTION);
     }
   };
@@ -178,12 +178,12 @@ export default function AIHelpFlow() {
                 {aiResult.suggestion}
               </div>
             </div>
-          ) : (
+          ) : error ? (
             <div className="card border-amber-800/50 p-5 animate-fadeIn">
-              <p className="font-medium text-amber-300 mb-1">ATLAS could not resolve this remotely</p>
-              <p className="text-sm text-gray-500">{error || 'This issue requires hands-on IT support.'}</p>
+              <p className="font-medium text-amber-300 mb-1">ATLAS is temporarily unavailable</p>
+              <p className="text-sm text-gray-500">{error}</p>
             </div>
-          )}
+          ) : null}
 
           <div className="card p-6">
             <p className="font-medium text-gray-200 mb-4">Did this solve your problem?</p>
