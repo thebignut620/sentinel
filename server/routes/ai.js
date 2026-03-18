@@ -137,7 +137,6 @@ router.post('/assist', async (req, res) => {
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-6',
       max_tokens: 3500,
-      thinking: { type: 'adaptive' },
       system: ATLAS_SYSTEM,
       messages: [{
         role: 'user',
@@ -148,16 +147,20 @@ ${problem}`,
       }],
     });
 
-    const suggestion = response.content.find(b => b.type === 'text')?.text || '';
+    console.log('[ATLAS] response block types:', response.content.map(b => b.type));
+    const textBlock = response.content.find(b => b.type === 'text');
+    console.log('[ATLAS] text block found:', !!textBlock, '| length:', textBlock?.text?.length ?? 0);
+    console.log('[ATLAS] suggestion preview:', textBlock?.text?.slice(0, 150));
+
+    const suggestion = textBlock?.text || '';
 
     // A response is considered self-serviceable if ATLAS provided substantive troubleshooting.
-    // We no longer penalize for mentioning escalation — ATLAS always provides steps first,
-    // and the "When to escalate" block at the end is expected in every full response.
     const resolved = suggestion.length > 150;
 
     res.json({ resolved, suggestion });
   } catch (err) {
     console.error('[ATLAS] assist error:', err.message);
+    console.error('[ATLAS] assist stack:', err.stack);
     res.json({ resolved: false, suggestion: null, error: 'ATLAS is temporarily offline.' });
   }
 });
