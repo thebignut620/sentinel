@@ -5,9 +5,16 @@ import { sendTicketStatusEmail } from '../services/email.js';
 
 const router = express.Router();
 
+async function logHistory(ticketId, userId, action, fromVal, toVal) {
+  await db.run(
+    'INSERT INTO ticket_history (ticket_id, user_id, action, from_val, to_val) VALUES (?, ?, ?, ?, ?)',
+    ticketId, userId, action, fromVal ?? null, toVal
+  );
+}
+
 // List tickets
 router.get('/', authenticate, async (req, res) => {
-  const { status, priority, category, search } = req.query;
+  const { status, priority, category, search, assignee } = req.query;
   let query, params;
 
   if (req.user.role === 'employee') {
@@ -33,13 +40,50 @@ router.get('/', authenticate, async (req, res) => {
   if (status)   { query += ' AND t.status = ?';   params.push(status); }
   if (priority) { query += ' AND t.priority = ?'; params.push(priority); }
   if (category) { query += ' AND t.category = ?'; params.push(category); }
-  if (search)   {
+  if (assignee === 'me') { query += ' AND t.assignee_id = ?'; params.push(req.user.id); }
+  if (search) {
     query += ' AND (t.title LIKE ? OR u.name LIKE ?)';
     params.push(`%${search}%`, `%${search}%`);
   }
   query += ' ORDER BY t.created_at DESC';
 
   res.json(await db.all(query, ...params));
+});
+
+// Get ticket history
+router.get('/:id/history', authenticate, async (req, res) => {
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+  if (req.user.role === 'employee' && ticket.submitter_id !== req.user.id) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const history = await db.all(`
+    SELECT th.*, u.name as actor_name, u.role as actor_role
+    FROM ticket_history th
+    JOIN users u ON th.user_id = u.id
+    WHERE th.ticket_id = ?
+    ORDER BY th.created_at ASC
+  `, req.params.id);
+
+  res.json(history);
+});
+
+// Get related tickets (same category, different id)
+router.get('/:id/related', authenticate, async (req, res) => {
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+  const related = await db.all(`
+    SELECT t.id, t.title, t.status, t.priority, t.category, t.created_at, u.name as submitter_name
+    FROM tickets t
+    JOIN users u ON t.submitter_id = u.id
+    WHERE t.category = ? AND t.id != ?
+    ORDER BY t.created_at DESC
+    LIMIT 4
+  `, ticket.category, ticket.id);
+
+  res.json(related);
 });
 
 // Get single ticket with comments, notes, attachments
@@ -66,7 +110,6 @@ router.get('/:id', authenticate, async (req, res) => {
     ORDER BY tc.created_at ASC
   `, req.params.id);
 
-  // Internal notes — only visible to staff/admin
   let notes = [];
   if (req.user.role !== 'employee') {
     notes = await db.all(`
@@ -106,7 +149,49 @@ router.post('/', authenticate, async (req, res) => {
   `, title.trim(), description.trim(), priority, category, req.user.id, ai_attempted ? 1 : 0, ai_suggestion);
 
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastInsertRowid);
+
+  // Log creation
+  await logHistory(ticket.id, req.user.id, 'created', null, 'open');
+
   res.status(201).json(ticket);
+});
+
+// Bulk update tickets (staff/admin only)
+router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
+  const { ids, status, assignee_id } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'ids array required' });
+  }
+  if (!status && assignee_id === undefined) {
+    return res.status(400).json({ error: 'Nothing to update' });
+  }
+
+  for (const id of ids) {
+    const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', id);
+    if (!ticket) continue;
+
+    const fields = ["updated_at = datetime('now')"];
+    const values = [];
+
+    if (status) {
+      fields.push('status = ?'); values.push(status);
+      if (status === 'resolved' && ticket.status !== 'resolved') {
+        fields.push("resolved_at = datetime('now')");
+      } else if (status !== 'resolved') {
+        fields.push('resolved_at = NULL');
+      }
+      if (status !== ticket.status) {
+        await logHistory(id, req.user.id, 'status', ticket.status, status);
+      }
+    }
+    if (assignee_id !== undefined) {
+      fields.push('assignee_id = ?'); values.push(assignee_id || null);
+    }
+
+    await db.run(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`, ...values, id);
+  }
+
+  res.json({ ok: true, updated: ids.length });
 });
 
 // Update ticket (staff/admin only)
@@ -118,16 +203,15 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
   const fields = [];
   const values = [];
 
-  if (status !== undefined)    { fields.push('status = ?');      values.push(status); }
-  if (priority !== undefined)  { fields.push('priority = ?');    values.push(priority); }
-  if (category !== undefined)  { fields.push('category = ?');    values.push(category); }
+  if (status !== undefined)      { fields.push('status = ?');      values.push(status); }
+  if (priority !== undefined)    { fields.push('priority = ?');    values.push(priority); }
+  if (category !== undefined)    { fields.push('category = ?');    values.push(category); }
   if (assignee_id !== undefined) { fields.push('assignee_id = ?'); values.push(assignee_id || null); }
 
   if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
   fields.push("updated_at = datetime('now')");
 
-  // Set resolved_at when status moves to resolved
   if (status === 'resolved' && ticket.status !== 'resolved') {
     fields.push("resolved_at = datetime('now')");
   } else if (status && status !== 'resolved') {
@@ -135,6 +219,23 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
   }
 
   await db.run(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`, ...values, req.params.id);
+
+  // Log changes to history
+  if (status && status !== ticket.status) {
+    await logHistory(req.params.id, req.user.id, 'status', ticket.status, status);
+  }
+  if (priority && priority !== ticket.priority) {
+    await logHistory(req.params.id, req.user.id, 'priority', ticket.priority, priority);
+  }
+  if (assignee_id !== undefined) {
+    const newAssignee = assignee_id || null;
+    if (newAssignee !== ticket.assignee_id) {
+      const assigneeName = newAssignee
+        ? (await db.get('SELECT name FROM users WHERE id = ?', newAssignee))?.name
+        : null;
+      await logHistory(req.params.id, req.user.id, 'assigned', ticket.assignee_id?.toString() ?? null, assigneeName ?? 'Unassigned');
+    }
+  }
 
   const updated = await db.get(`
     SELECT t.*, u.name as submitter_name, a.name as assignee_name
@@ -144,17 +245,10 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
     WHERE t.id = ?
   `, req.params.id);
 
-  // Send email notification to submitter if status changed
   if (status && status !== ticket.status) {
     const submitter = await db.get('SELECT name, email FROM users WHERE id = ?', ticket.submitter_id);
     if (submitter) {
-      sendTicketStatusEmail({
-        to: submitter.email,
-        name: submitter.name,
-        ticketId: ticket.id,
-        title: ticket.title,
-        newStatus: status,
-      });
+      sendTicketStatusEmail({ to: submitter.email, name: submitter.name, ticketId: ticket.id, title: ticket.title, newStatus: status });
     }
   }
 

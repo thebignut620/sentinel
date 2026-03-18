@@ -68,6 +68,16 @@ export async function runMigrations() {
       created_at  TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS ticket_history (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      user_id    INTEGER NOT NULL REFERENCES users(id),
+      action     TEXT NOT NULL,
+      from_val   TEXT,
+      to_val     TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

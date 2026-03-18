@@ -4,11 +4,29 @@ import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badg
 import { SkeletonTable } from '../../components/Skeleton.jsx';
 import api from '../../api/client.js';
 
+const PRIORITY_STRIP = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-gray-600' };
+const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
+
+function isNew(createdAt) {
+  return Date.now() - new Date(createdAt).getTime() < 48 * 3_600_000;
+}
+
+function OpenAge({ createdAt }) {
+  const ms = Date.now() - new Date(createdAt).getTime();
+  const h = Math.floor(ms / 3_600_000);
+  const d = Math.floor(h / 24);
+  return <span className="text-xs text-gray-600">{d > 0 ? `${d}d ${h%24}h` : `${h}h`} open</span>;
+}
+
+function initials(name = '') {
+  return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+}
+
 export default function MyTickets() {
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [search, setSearch] = useState('');
+  const [filter, setFilter]   = useState('all');
+  const [search, setSearch]   = useState('');
 
   useEffect(() => {
     api.get('/tickets').then(r => setTickets(r.data)).finally(() => setLoading(false));
@@ -30,39 +48,22 @@ export default function MyTickets() {
     <div className="space-y-5 animate-fadeIn">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">My Tickets</h1>
-        <Link
-          to="/help"
-          className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5"
-        >
+        <Link to="/help" className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5">
           <span>+</span> New Issue
         </Link>
       </div>
 
-      {/* Search */}
-      <input
-        type="text"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Search tickets…"
-        className="input w-full max-w-sm"
-      />
+      <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+        placeholder="Search tickets…" className="input w-full max-w-sm" />
 
-      {/* Status filters */}
       <div className="flex gap-2 flex-wrap">
-        {['all', 'open', 'in_progress', 'resolved', 'closed'].map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
+        {['all','open','in_progress','resolved','closed'].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium capitalize transition-all duration-150 active:scale-95 ${
-              filter === f
-                ? 'bg-pine-700 text-white shadow-sm'
-                : 'bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200'
-            }`}
-          >
-            {f.replace('_', ' ')}
-            <span className={`ml-1.5 ${filter === f ? 'text-pine-200' : 'text-gray-600'}`}>
-              {counts[f]}
-            </span>
+              filter === f ? 'bg-pine-700 text-white' : 'bg-gray-800 border border-gray-700 text-gray-400 hover:text-gray-200'
+            }`}>
+            {f.replace('_',' ')}
+            <span className={`ml-1.5 ${filter === f ? 'text-pine-200' : 'text-gray-600'}`}>{counts[f]}</span>
           </button>
         ))}
       </div>
@@ -71,41 +72,44 @@ export default function MyTickets() {
         <SkeletonTable rows={4} />
       ) : filtered.length === 0 ? (
         <div className="card py-14 text-center text-gray-600">
-          {filter === 'all' && !search ? 'You have no tickets yet.' : 'No tickets match your filters.'}
+          {filter === 'all' && !search ? 'You have no tickets yet.' : 'No tickets match.'}
         </div>
       ) : (
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-800/50 border-b border-gray-800 text-left">
-              <tr>
-                <th className="px-4 py-3 text-gray-500 font-medium text-xs">#</th>
-                <th className="px-4 py-3 text-gray-500 font-medium text-xs">Title</th>
-                <th className="px-4 py-3 text-gray-500 font-medium text-xs">Category</th>
-                <th className="px-4 py-3 text-gray-500 font-medium text-xs">Status</th>
-                <th className="px-4 py-3 text-gray-500 font-medium text-xs">Priority</th>
-                <th className="px-4 py-3 text-gray-500 font-medium text-xs">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(t => (
-                <tr key={t.id} className="border-b border-gray-800/60 last:border-0 hover:bg-gray-800/30 transition-colors">
-                  <td className="px-4 py-3 text-gray-600 text-xs">{t.id}</td>
-                  <td className="px-4 py-3">
-                    <Link to={`/tickets/${t.id}`} className="text-pine-400 hover:text-pine-300 font-medium transition-colors">
-                      {t.title}
-                    </Link>
-                    {t.ai_attempted === 1 && (
-                      <span className="ml-2 text-xs text-gray-600">🤖</span>
+        <div className="space-y-2">
+          {filtered.map(t => (
+            <Link key={t.id} to={`/tickets/${t.id}`}
+              className="flex rounded-xl overflow-hidden border border-gray-800 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/40 hover:border-gray-700 transition-all duration-200 bg-gray-900 group">
+              {/* Priority strip */}
+              <div className={`w-1 shrink-0 ${PRIORITY_STRIP[t.priority]}`} />
+              {/* Content */}
+              <div className="flex-1 px-4 py-3 flex items-center gap-3 min-w-0">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    {isNew(t.created_at) && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-pine-400 shrink-0 animate-pulse" title="New" />
                     )}
-                  </td>
-                  <td className="px-4 py-3"><CategoryBadge category={t.category} /></td>
-                  <td className="px-4 py-3"><StatusBadge status={t.status} /></td>
-                  <td className="px-4 py-3"><PriorityBadge priority={t.priority} /></td>
-                  <td className="px-4 py-3 text-gray-600 text-xs">{new Date(t.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <span className="text-xs text-gray-600">#{t.id}</span>
+                    <span className="text-sm">{CATEGORY_ICONS[t.category]}</span>
+                    {t.ai_attempted === 1 && <span className="text-xs text-gray-600">🤖</span>}
+                  </div>
+                  <p className="text-sm font-medium text-gray-200 group-hover:text-white transition-colors truncate">{t.title}</p>
+                </div>
+                <div className="hidden sm:flex items-center gap-2 shrink-0">
+                  <CategoryBadge category={t.category} />
+                  <StatusBadge status={t.status} />
+                  <PriorityBadge priority={t.priority} />
+                </div>
+                {t.assignee_name && (
+                  <div className="h-7 w-7 rounded-full bg-pine-900/60 border border-pine-800/40 flex items-center justify-center text-pine-400 text-[9px] font-bold shrink-0">
+                    {initials(t.assignee_name)}
+                  </div>
+                )}
+                <div className="hidden md:block shrink-0">
+                  <OpenAge createdAt={t.created_at} />
+                </div>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>

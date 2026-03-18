@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badges.jsx';
 import { SkeletonCard } from '../../components/Skeleton.jsx';
@@ -8,35 +8,155 @@ import api from '../../api/client.js';
 
 const SERVER = (api.defaults.baseURL || 'http://localhost:3001/api').replace('/api', '');
 
+const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
+
 function formatBytes(b) {
   if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  if (b < 1048576) return `${(b/1024).toFixed(1)} KB`;
+  return `${(b/1048576).toFixed(1)} MB`;
 }
 
-function Avatar({ name, className = '' }) {
-  const initials = name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
+function Avatar({ name, size = 8, className = '' }) {
+  const ini = (name || '?').split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase();
   return (
-    <div className={`h-8 w-8 rounded-full bg-pine-900/60 border border-pine-800/40 flex items-center justify-center text-pine-400 text-xs font-bold shrink-0 ${className}`}>
-      {initials}
+    <div className={`h-${size} w-${size} rounded-full bg-pine-900/60 border border-pine-800/40
+                    flex items-center justify-center text-pine-400 font-bold shrink-0 ${className}`}
+      style={{ fontSize: size <= 6 ? '9px' : '11px' }}>
+      {ini}
     </div>
   );
 }
 
+// ── Timeline ──────────────────────────────────────────────────────────────────
+const HISTORY_ICONS = {
+  created:  { icon: '✦', color: 'text-pine-400',   bg: 'bg-pine-900/60 border-pine-800/50' },
+  status:   { icon: '⇄', color: 'text-blue-400',   bg: 'bg-blue-900/40 border-blue-800/50' },
+  priority: { icon: '↑', color: 'text-amber-400',  bg: 'bg-amber-900/40 border-amber-800/50' },
+  assigned: { icon: '→', color: 'text-purple-400', bg: 'bg-purple-900/40 border-purple-800/50' },
+  comment:  { icon: '💬', color: 'text-gray-400',  bg: 'bg-gray-800 border-gray-700' },
+};
+
+function historyLabel(entry) {
+  if (entry.kind === 'comment') return null;
+  switch (entry.action) {
+    case 'created':  return <span>Ticket opened as <span className="text-pine-300">open</span></span>;
+    case 'status':   return <span>Status changed from <span className="capitalize text-gray-300">{entry.from_val?.replace('_',' ')}</span> → <span className="capitalize text-pine-300">{entry.to_val?.replace('_',' ')}</span></span>;
+    case 'priority': return <span>Priority changed to <span className="text-amber-300 capitalize">{entry.to_val}</span></span>;
+    case 'assigned': return <span>Assigned to <span className="text-purple-300">{entry.to_val}</span></span>;
+    default:         return <span>{entry.action}: {entry.to_val}</span>;
+  }
+}
+
+function Timeline({ history, comments, ticket }) {
+  // Merge history events + comments into one sorted list
+  const events = [
+    ...history.map(h => ({ ...h, kind: 'history', ts: h.created_at })),
+    ...comments.map(c => ({ ...c, kind: 'comment', action: 'comment', actor_name: c.author_name, ts: c.created_at })),
+  ].sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+  return (
+    <div className="space-y-1">
+      {events.map((ev, i) => {
+        const cfg = HISTORY_ICONS[ev.action] || HISTORY_ICONS.comment;
+        const isComment = ev.kind === 'comment';
+        return (
+          <div key={`${ev.kind}-${ev.id ?? i}`} className="flex gap-3 group">
+            {/* Spine line */}
+            <div className="flex flex-col items-center">
+              <div className={`h-6 w-6 rounded-full border flex items-center justify-center text-[10px] shrink-0 ${cfg.bg} ${cfg.color}`}>
+                {cfg.icon}
+              </div>
+              {i < events.length - 1 && <div className="w-px flex-1 bg-gray-800 mt-1 mb-0" style={{ minHeight: '12px' }} />}
+            </div>
+            {/* Content */}
+            <div className="pb-3 flex-1 min-w-0">
+              <div className="flex items-baseline gap-2 flex-wrap mb-0.5">
+                <span className="text-xs font-medium text-gray-300">{ev.actor_name || ev.author_name}</span>
+                <span className="text-[10px] text-gray-600">{new Date(ev.ts).toLocaleString()}</span>
+              </div>
+              {isComment ? (
+                <p className="text-xs text-gray-400 leading-relaxed bg-gray-800/50 rounded-lg px-3 py-2 border border-gray-800/60">
+                  {ev.body}
+                </p>
+              ) : (
+                <p className="text-xs text-gray-500">{historyLabel(ev)}</p>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Resolution summary ────────────────────────────────────────────────────────
+function ResolutionCard({ ticket }) {
+  if (!['resolved','closed'].includes(ticket.status)) return null;
+  const ms = ticket.resolved_at
+    ? new Date(ticket.resolved_at) - new Date(ticket.created_at)
+    : null;
+  const hours = ms ? Math.round(ms / 3_600_000) : null;
+  return (
+    <div className="card p-5 border-pine-800/50">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-pine-400 text-lg">✓</span>
+        <h3 className="font-semibold text-pine-300 text-sm">Resolution Summary</h3>
+      </div>
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <div><span className="text-gray-500">Status</span><p className="text-pine-300 font-medium capitalize mt-0.5">{ticket.status}</p></div>
+        <div><span className="text-gray-500">Resolved by</span><p className="text-gray-200 font-medium mt-0.5">{ticket.assignee_name || '—'}</p></div>
+        {ticket.resolved_at && <div><span className="text-gray-500">Resolved at</span><p className="text-gray-300 mt-0.5">{new Date(ticket.resolved_at).toLocaleString()}</p></div>}
+        {hours !== null && <div><span className="text-gray-500">Handle time</span><p className="text-gray-300 mt-0.5">{hours}h total</p></div>}
+      </div>
+    </div>
+  );
+}
+
+// ── Related tickets ───────────────────────────────────────────────────────────
+function RelatedTickets({ ticketId }) {
+  const [related, setRelated] = useState([]);
+  useEffect(() => {
+    api.get(`/tickets/${ticketId}/related`).then(r => setRelated(r.data)).catch(() => {});
+  }, [ticketId]);
+  if (related.length === 0) return null;
+  return (
+    <div className="card p-5">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Related Tickets</h3>
+      <div className="space-y-2">
+        {related.map(t => (
+          <Link key={t.id} to={`/tickets/${t.id}`}
+            className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-800 transition-colors group">
+            <span className="text-sm shrink-0">{CATEGORY_ICONS[t.category]}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-300 truncate group-hover:text-white">{t.title}</p>
+              <p className="text-[10px] text-gray-600">#{t.id} · {t.submitter_name}</p>
+            </div>
+            <StatusBadge status={t.status} />
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function TicketDetail() {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
   const { addToast } = useToast();
   const fileInputRef = useRef(null);
+  const commentBoxRef = useRef(null);
 
-  const [ticket, setTicket]     = useState(null);
-  const [loading, setLoading]   = useState(true);
-  const [staffUsers, setStaffUsers] = useState([]);
-  const [comment, setComment]   = useState('');
-  const [note, setNote]         = useState('');
+  const [ticket, setTicket]       = useState(null);
+  const [history, setHistory]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [staffUsers, setStaff]    = useState([]);
+  const [comment, setComment]     = useState('');
+  const [note, setNote]           = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [uploading, setUploading]   = useState(false);
+  const [uploading, setUploading]  = useState(false);
+  const [newCommentId, setNewCommentId] = useState(null);
 
   const [editStatus,   setEditStatus]   = useState('');
   const [editPriority, setEditPriority] = useState('');
@@ -44,20 +164,24 @@ export default function TicketDetail() {
   const [editAssignee, setEditAssignee] = useState('');
 
   useEffect(() => {
-    loadTicket();
+    loadAll();
     if (user.role !== 'employee') {
-      api.get('/users').then(r => setStaffUsers(r.data.filter(u => u.role !== 'employee' && u.is_active)));
+      api.get('/users').then(r => setStaff(r.data.filter(u => u.role !== 'employee' && u.is_active)));
     }
   }, [id]);
 
-  const loadTicket = async () => {
+  const loadAll = async () => {
     try {
-      const res = await api.get(`/tickets/${id}`);
-      setTicket(res.data);
-      setEditStatus(res.data.status);
-      setEditPriority(res.data.priority);
-      setEditCategory(res.data.category || 'software');
-      setEditAssignee(res.data.assignee_id ?? '');
+      const [tRes, hRes] = await Promise.all([
+        api.get(`/tickets/${id}`),
+        api.get(`/tickets/${id}/history`),
+      ]);
+      setTicket(tRes.data);
+      setHistory(hRes.data);
+      setEditStatus(tRes.data.status);
+      setEditPriority(tRes.data.priority);
+      setEditCategory(tRes.data.category || 'software');
+      setEditAssignee(tRes.data.assignee_id ?? '');
     } catch {
       navigate('/tickets');
     } finally {
@@ -72,8 +196,8 @@ export default function TicketDetail() {
         status: editStatus, priority: editPriority,
         category: editCategory, assignee_id: editAssignee || null,
       });
-      addToast('Ticket updated successfully', 'success');
-      await loadTicket();
+      addToast('Ticket updated', 'success');
+      await loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Update failed', 'error');
     } finally {
@@ -86,12 +210,14 @@ export default function TicketDetail() {
     if (!comment.trim()) return;
     setSubmitting(true);
     try {
-      await api.post(`/tickets/${id}/comments`, { body: comment });
+      const res = await api.post(`/tickets/${id}/comments`, { body: comment });
       setComment('');
+      setNewCommentId(res.data.id);
       addToast('Comment posted', 'success');
-      await loadTicket();
+      await loadAll();
+      setTimeout(() => setNewCommentId(null), 1000);
     } catch (err) {
-      addToast(err.response?.data?.error || 'Failed to add comment', 'error');
+      addToast(err.response?.data?.error || 'Failed', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -105,9 +231,9 @@ export default function TicketDetail() {
       await api.post(`/tickets/${id}/notes`, { body: note });
       setNote('');
       addToast('Internal note added', 'success');
-      await loadTicket();
+      await loadAll();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Failed to add note', 'error');
+      addToast(err.response?.data?.error || 'Failed', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -120,11 +246,9 @@ export default function TicketDetail() {
     const form = new FormData();
     form.append('file', file);
     try {
-      await api.post(`/tickets/${id}/attachments`, form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await api.post(`/tickets/${id}/attachments`, form, { headers: { 'Content-Type': 'multipart/form-data' } });
       addToast('File attached', 'success');
-      await loadTicket();
+      await loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Upload failed', 'error');
     } finally {
@@ -136,41 +260,33 @@ export default function TicketDetail() {
   const handleDeleteAttachment = async (attachId) => {
     try {
       await api.delete(`/tickets/${id}/attachments/${attachId}`);
-      addToast('Attachment deleted', 'info');
-      await loadTicket();
-    } catch (err) {
-      addToast('Failed to delete attachment', 'error');
+      addToast('Attachment removed', 'info');
+      await loadAll();
+    } catch {
+      addToast('Delete failed', 'error');
     }
   };
 
-  if (loading) {
-    return (
-      <div className="space-y-5 animate-fadeIn">
-        <div className="skeleton h-5 w-20" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          <SkeletonCard className="lg:col-span-2" />
-          <SkeletonCard />
-        </div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="space-y-5 animate-fadeIn">
+      <div className="skeleton h-5 w-20" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5"><SkeletonCard className="lg:col-span-2" /><SkeletonCard /></div>
+    </div>
+  );
   if (!ticket) return null;
 
   const canManage = user.role === 'it_staff' || user.role === 'admin';
 
   return (
     <div className="animate-fadeIn">
-      <button
-        onClick={() => navigate(-1)}
-        className="text-sm text-gray-500 hover:text-gray-300 mb-4 flex items-center gap-1 transition-colors"
-      >
+      <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-300 mb-4 flex items-center gap-1 transition-colors">
         ← Back
       </button>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* ── Main column ── */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Header card */}
+          {/* Header */}
           <div className="card p-6">
             <div className="flex items-start justify-between gap-4 mb-3">
               <h1 className="text-xl font-bold text-white leading-tight">{ticket.title}</h1>
@@ -188,10 +304,8 @@ export default function TicketDetail() {
             </div>
             <p className="text-xs text-gray-500 mb-5">
               Submitted by <span className="text-gray-300 font-medium">{ticket.submitter_name}</span>
-              {' '}· {new Date(ticket.created_at).toLocaleString()}
-              {ticket.assignee_name && (
-                <> · Assigned to <span className="text-gray-300 font-medium">{ticket.assignee_name}</span></>
-              )}
+              {' · '}{new Date(ticket.created_at).toLocaleString()}
+              {ticket.assignee_name && <> · Assigned to <span className="text-gray-300 font-medium">{ticket.assignee_name}</span></>}
             </p>
 
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Description</h3>
@@ -201,7 +315,7 @@ export default function TicketDetail() {
 
             {ticket.ai_suggestion && (
               <div className="mt-4">
-                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">AI Suggested Solution</h3>
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">AI Suggestion</h3>
                 <div className="bg-pine-900/30 border border-pine-800/50 rounded-lg p-4 text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
                   {ticket.ai_suggestion}
                 </div>
@@ -212,66 +326,66 @@ export default function TicketDetail() {
           {/* Attachments */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-200 text-sm">
+              <h2 className="text-sm font-semibold text-gray-200">
                 Attachments {ticket.attachments?.length > 0 && `(${ticket.attachments.length})`}
               </h2>
               <label className={`btn-secondary px-3 py-1.5 text-xs cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
                 {uploading ? 'Uploading…' : '+ Attach File'}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
               </label>
             </div>
             {ticket.attachments?.length === 0 ? (
               <p className="text-xs text-gray-600">No attachments yet.</p>
             ) : (
-              <div className="space-y-2">
-                {ticket.attachments.map(a => (
-                  <div key={a.id} className="flex items-center gap-3 p-2.5 bg-gray-800/50 rounded-lg border border-gray-700/40 group">
-                    <span className="text-lg shrink-0">📎</span>
-                    <div className="flex-1 min-w-0">
-                      <a
-                        href={`${SERVER}/uploads/${a.filename}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm text-pine-400 hover:text-pine-300 transition-colors truncate block"
-                      >
-                        {a.original}
-                      </a>
-                      <p className="text-xs text-gray-600">{formatBytes(a.size)}</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {ticket.attachments.map(a => {
+                  const isImage = a.mimetype?.startsWith('image/');
+                  const url = `${SERVER}/uploads/${a.filename}`;
+                  return (
+                    <div key={a.id} className="relative group rounded-xl overflow-hidden border border-gray-800 bg-gray-800/40">
+                      {isImage ? (
+                        <a href={url} target="_blank" rel="noreferrer">
+                          <img src={url} alt={a.original} className="w-full h-24 object-cover transition-transform group-hover:scale-105" />
+                        </a>
+                      ) : (
+                        <a href={url} target="_blank" rel="noreferrer"
+                          className="flex flex-col items-center justify-center h-24 text-gray-400 hover:text-gray-200 gap-1 transition-colors">
+                          <span className="text-2xl">📎</span>
+                          <span className="text-[10px] text-center px-2 truncate w-full">{a.original}</span>
+                        </a>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-1 flex items-center justify-between">
+                        <span className="text-[9px] text-gray-400 truncate">{a.original}</span>
+                        <span className="text-[9px] text-gray-600">{formatBytes(a.size)}</span>
+                      </div>
+                      {(canManage || user.id === ticket.submitter_id) && (
+                        <button onClick={() => handleDeleteAttachment(a.id)}
+                          className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/70 text-gray-400 hover:text-red-400 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          ✕
+                        </button>
+                      )}
                     </div>
-                    {(canManage || user.id === ticket.submitter_id) && (
-                      <button
-                        onClick={() => handleDeleteAttachment(a.id)}
-                        className="text-gray-700 hover:text-red-400 transition-colors text-xs opacity-0 group-hover:opacity-100"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
           {/* Comments */}
           <div className="card p-5">
-            <h2 className="font-semibold text-gray-200 text-sm mb-4">
+            <h2 className="text-sm font-semibold text-gray-200 mb-4">
               Comments {ticket.comments?.length > 0 && `(${ticket.comments.length})`}
             </h2>
-
             {ticket.comments?.length > 0 && (
               <div className="space-y-4 mb-5">
                 {ticket.comments.map(c => (
-                  <div key={c.id} className="flex gap-3">
+                  <div key={c.id}
+                    className={`flex gap-3 transition-all duration-500 ${newCommentId === c.id ? 'animate-fadeIn' : ''}`}>
                     <Avatar name={c.author_name} />
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="text-sm font-medium text-gray-200">{c.author_name}</span>
-                        <span className="text-xs text-gray-600 capitalize">{c.author_role?.replace('_', ' ')}</span>
+                        <span className="text-xs text-gray-600 capitalize">{c.author_role?.replace('_',' ')}</span>
                         <span className="text-xs text-gray-700">{new Date(c.created_at).toLocaleString()}</span>
                       </div>
                       <p className="text-sm text-gray-400 leading-relaxed">{c.body}</p>
@@ -280,117 +394,84 @@ export default function TicketDetail() {
                 ))}
               </div>
             )}
-
-            <form onSubmit={handleComment} className="space-y-2">
-              <textarea
-                value={comment}
-                onChange={e => setComment(e.target.value)}
-                rows={3}
-                className="input w-full resize-none"
-                placeholder="Write a comment…"
-              />
-              <button
-                type="submit"
-                disabled={!comment.trim() || submitting}
-                className="btn-primary px-4 py-2 text-sm"
-              >
+            <form onSubmit={handleComment} className="space-y-2" ref={commentBoxRef}>
+              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
+                className="input w-full resize-none" placeholder="Write a comment…" />
+              <button type="submit" disabled={!comment.trim() || submitting} className="btn-primary px-4 py-2 text-sm">
                 Post Comment
               </button>
             </form>
           </div>
 
-          {/* Internal notes (staff/admin only) */}
+          {/* Internal notes */}
           {canManage && (
-            <div className="card p-5 border-amber-900/40">
+            <div className="card p-5" style={{ borderColor: 'rgba(180,120,0,0.3)' }}>
               <div className="flex items-center gap-2 mb-4">
                 <span className="text-amber-400">🔒</span>
-                <h2 className="font-semibold text-amber-300 text-sm">Internal Notes</h2>
-                <span className="text-xs text-gray-600">(IT staff only — not visible to employees)</span>
+                <h2 className="text-sm font-semibold text-amber-300">Internal Notes</h2>
+                <span className="text-xs text-gray-600">— IT staff only</span>
               </div>
-
               {ticket.notes?.length > 0 && (
                 <div className="space-y-3 mb-4">
                   {ticket.notes.map(n => (
-                    <div key={n.id} className="bg-amber-900/20 border border-amber-800/30 rounded-lg p-3">
+                    <div key={n.id} className="rounded-lg p-3 border"
+                      style={{ background: 'rgba(120,80,0,0.15)', borderColor: 'rgba(180,120,0,0.25)' }}>
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-xs font-medium text-amber-300">{n.author_name}</span>
-                        <span className="text-xs text-gray-700">{new Date(n.created_at).toLocaleString()}</span>
+                        <span className="text-xs text-gray-600">{new Date(n.created_at).toLocaleString()}</span>
                       </div>
                       <p className="text-sm text-gray-400 leading-relaxed">{n.body}</p>
                     </div>
                   ))}
                 </div>
               )}
-
               <form onSubmit={handleNote} className="space-y-2">
-                <textarea
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                  rows={2}
-                  className="input w-full resize-none border-amber-900/40 focus:border-amber-700/60"
-                  placeholder="Add an internal note…"
-                />
-                <button
-                  type="submit"
-                  disabled={!note.trim() || submitting}
-                  className="px-4 py-2 text-sm bg-amber-900/60 hover:bg-amber-800/60 border border-amber-800/50 text-amber-300 rounded-lg transition-colors active:scale-95 disabled:opacity-50"
-                >
+                <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
+                  className="input w-full resize-none"
+                  style={{ borderColor: 'rgba(180,120,0,0.3)' }}
+                  placeholder="Add an internal note…" />
+                <button type="submit" disabled={!note.trim() || submitting}
+                  className="px-4 py-2 text-xs rounded-lg transition-colors active:scale-95 disabled:opacity-50"
+                  style={{ background: 'rgba(120,80,0,0.3)', color: '#fbbf24', border: '1px solid rgba(180,120,0,0.3)' }}>
                   Add Note
                 </button>
               </form>
             </div>
           )}
+
+          {/* Resolution summary */}
+          <ResolutionCard ticket={ticket} />
+
+          {/* Related tickets */}
+          <RelatedTickets ticketId={id} />
         </div>
 
-        {/* ── Sidebar ── */}
+        {/* ── Right column: manage + timeline ── */}
         <div className="space-y-4">
-          {/* Manage ticket */}
           {canManage && (
             <div className="card p-5">
-              <h3 className="font-semibold text-gray-200 text-sm mb-4">Manage Ticket</h3>
+              <h3 className="text-sm font-semibold text-gray-200 mb-4">Manage</h3>
               <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-                  <select value={editStatus} onChange={e => setEditStatus(e.target.value)} className="input w-full">
-                    <option value="open">Open</option>
-                    <option value="in_progress">In Progress</option>
-                    <option value="resolved">Resolved</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Priority</label>
-                  <select value={editPriority} onChange={e => setEditPriority(e.target.value)} className="input w-full">
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-                  <select value={editCategory} onChange={e => setEditCategory(e.target.value)} className="input w-full">
-                    <option value="hardware">Hardware</option>
-                    <option value="software">Software</option>
-                    <option value="network">Network</option>
-                    <option value="access">Access</option>
-                    <option value="account">Account</option>
-                  </select>
-                </div>
+                {[
+                  { label: 'Status', val: editStatus, set: setEditStatus, opts: ['open','in_progress','resolved','closed'] },
+                  { label: 'Priority', val: editPriority, set: setEditPriority, opts: ['low','medium','high','critical'] },
+                  { label: 'Category', val: editCategory, set: setEditCategory, opts: ['hardware','software','network','access','account'] },
+                ].map(f => (
+                  <div key={f.label}>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">{f.label}</label>
+                    <select value={f.val} onChange={e => f.set(e.target.value)} className="input w-full">
+                      {f.opts.map(o => <option key={o} value={o}>{o.replace('_',' ')}</option>)}
+                    </select>
+                  </div>
+                ))}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Assign To</label>
                   <select value={editAssignee} onChange={e => setEditAssignee(e.target.value)} className="input w-full">
                     <option value="">— Unassigned —</option>
-                    {staffUsers.map(u => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
-                    ))}
+                    {staffUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
-                <button
-                  onClick={handleUpdate}
-                  disabled={submitting}
-                  className="btn-primary w-full py-2.5 text-sm"
-                >
+                <button onClick={handleUpdate} disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
                   {submitting ? 'Saving…' : 'Save Changes'}
                 </button>
               </div>
@@ -398,29 +479,31 @@ export default function TicketDetail() {
           )}
 
           {/* Timestamps */}
-          <div className="card p-4 space-y-2.5">
+          <div className="card p-4 space-y-2">
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Timeline</h3>
-            <div className="space-y-2">
-              <TimestampRow label="Created"  value={ticket.created_at} />
-              <TimestampRow label="Updated"  value={ticket.updated_at} />
-              {ticket.resolved_at && (
-                <TimestampRow label="Resolved" value={ticket.resolved_at} className="text-pine-400" />
-              )}
-            </div>
+            {[
+              { label: 'Created',  val: ticket.created_at },
+              { label: 'Updated',  val: ticket.updated_at },
+              ticket.resolved_at && { label: 'Resolved', val: ticket.resolved_at, highlight: true },
+            ].filter(Boolean).map(row => (
+              <div key={row.label} className="flex justify-between text-xs">
+                <span className="text-gray-600">{row.label}</span>
+                <span className={row.highlight ? 'text-pine-400' : 'text-gray-400'}>{new Date(row.val).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Activity timeline */}
+          <div className="card p-4">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Activity</h3>
+            {history.length === 0 && ticket.comments?.length === 0 ? (
+              <p className="text-xs text-gray-600">No activity yet.</p>
+            ) : (
+              <Timeline history={history} comments={ticket.comments || []} ticket={ticket} />
+            )}
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function TimestampRow({ label, value, className = '' }) {
-  return (
-    <div className="flex items-baseline justify-between gap-2 text-xs">
-      <span className="text-gray-600 shrink-0">{label}</span>
-      <span className={`text-right ${className || 'text-gray-400'}`}>
-        {new Date(value).toLocaleString()}
-      </span>
     </div>
   );
 }
