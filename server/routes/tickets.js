@@ -209,13 +209,13 @@ router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req
     const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', id);
     if (!ticket) continue;
 
-    const fields = ["updated_at = datetime('now')"];
+    const fields = ['updated_at = NOW()'];
     const values = [];
 
     if (status) {
       fields.push('status = ?'); values.push(status);
       if (status === 'resolved' && ticket.status !== 'resolved') {
-        fields.push("resolved_at = datetime('now')");
+        fields.push('resolved_at = NOW()');
       } else if (status !== 'resolved') {
         fields.push('resolved_at = NULL');
       }
@@ -249,10 +249,10 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
 
   if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
-  fields.push("updated_at = datetime('now')");
+  fields.push('updated_at = NOW()');
 
   if (status === 'resolved' && ticket.status !== 'resolved') {
-    fields.push("resolved_at = datetime('now')");
+    fields.push('resolved_at = NOW()');
   } else if (status && status !== 'resolved') {
     fields.push('resolved_at = NULL');
   }
@@ -355,7 +355,7 @@ router.post('/:id/comments', authenticate, async (req, res) => {
     req.params.id, req.user.id, body.trim()
   );
 
-  await db.run("UPDATE tickets SET updated_at = datetime('now') WHERE id = ?", req.params.id);
+  await db.run('UPDATE tickets SET updated_at = NOW() WHERE id = ?', req.params.id);
 
   const comment = await db.get(`
     SELECT tc.*, u.name as author_name, u.role as author_role

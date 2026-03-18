@@ -12,7 +12,7 @@ router.get('/', authenticate, async (req, res) => {
 router.patch('/', authenticate, requireRole('admin'), async (req, res) => {
   await db.transaction(async () => {
     for (const [key, value] of Object.entries(req.body)) {
-      await db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', key, String(value));
+      await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value', key, String(value));
     }
   });
 

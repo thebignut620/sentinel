@@ -2,98 +2,91 @@ import db from './connection.js';
 import bcrypt from 'bcryptjs';
 
 async function addColumnIfMissing(table, column, definition) {
-  try {
-    await db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  } catch (e) {
-    // Column already exists — that's fine
-  }
+  await db.run(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${definition}`);
 }
 
 export async function runMigrations() {
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  // Run each CREATE TABLE separately (pg doesn't support multi-statement exec)
+  const tables = [
+    `CREATE TABLE IF NOT EXISTS users (
+      id         SERIAL PRIMARY KEY,
       name       TEXT NOT NULL,
       email      TEXT NOT NULL UNIQUE,
       password   TEXT NOT NULL,
       role       TEXT NOT NULL DEFAULT 'employee'
                  CHECK(role IN ('employee', 'it_staff', 'admin')),
       is_active  INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS tickets (
-      id             INTEGER PRIMARY KEY AUTOINCREMENT,
-      title          TEXT NOT NULL,
-      description    TEXT NOT NULL,
-      status         TEXT NOT NULL DEFAULT 'open'
-                     CHECK(status IN ('open', 'in_progress', 'resolved', 'closed')),
-      priority       TEXT NOT NULL DEFAULT 'medium'
-                     CHECK(priority IN ('low', 'medium', 'high', 'critical')),
-      category       TEXT NOT NULL DEFAULT 'software'
-                     CHECK(category IN ('hardware', 'software', 'network', 'access', 'account')),
-      submitter_id   INTEGER NOT NULL REFERENCES users(id),
-      assignee_id    INTEGER REFERENCES users(id),
-      ai_attempted   INTEGER NOT NULL DEFAULT 0,
-      ai_suggestion  TEXT,
-      created_at     TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
-      resolved_at    TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS ticket_comments (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS tickets (
+      id                SERIAL PRIMARY KEY,
+      title             TEXT NOT NULL,
+      description       TEXT NOT NULL,
+      status            TEXT NOT NULL DEFAULT 'open'
+                        CHECK(status IN ('open', 'in_progress', 'resolved', 'closed')),
+      priority          TEXT NOT NULL DEFAULT 'medium'
+                        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+      category          TEXT NOT NULL DEFAULT 'software'
+                        CHECK(category IN ('hardware', 'software', 'network', 'access', 'account')),
+      submitter_id      INTEGER NOT NULL REFERENCES users(id),
+      assignee_id       INTEGER REFERENCES users(id),
+      ai_attempted      INTEGER NOT NULL DEFAULT 0,
+      ai_suggestion     TEXT,
+      sentiment         TEXT,
+      atlas_suggestions TEXT,
+      resolution_report TEXT,
+      ai_auto_assigned  INTEGER NOT NULL DEFAULT 0,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at       TIMESTAMPTZ
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_comments (
+      id         SERIAL PRIMARY KEY,
       ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
       user_id    INTEGER NOT NULL REFERENCES users(id),
       body       TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS ticket_notes (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_notes (
+      id         SERIAL PRIMARY KEY,
       ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
       user_id    INTEGER NOT NULL REFERENCES users(id),
       body       TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS ticket_attachments (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_attachments (
+      id          SERIAL PRIMARY KEY,
       ticket_id   INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
       user_id     INTEGER NOT NULL REFERENCES users(id),
       filename    TEXT NOT NULL,
       original    TEXT NOT NULL,
       size        INTEGER NOT NULL,
       mimetype    TEXT NOT NULL,
-      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS ticket_history (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_history (
+      id         SERIAL PRIMARY KEY,
       ticket_id  INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
       user_id    INTEGER NOT NULL REFERENCES users(id),
       action     TEXT NOT NULL,
       from_val   TEXT,
       to_val     TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS password_reset_tokens (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id         SERIAL PRIMARY KEY,
       user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       token      TEXT NOT NULL UNIQUE,
-      expires_at TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
       used       INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS settings (
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS knowledge_base (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    )`,
+    `CREATE TABLE IF NOT EXISTS knowledge_base (
+      id          SERIAL PRIMARY KEY,
       title       TEXT NOT NULL,
       category    TEXT NOT NULL DEFAULT 'software',
       problem     TEXT NOT NULL,
@@ -101,28 +94,40 @@ export async function runMigrations() {
       steps       TEXT,
       ticket_id   INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
       views       INTEGER NOT NULL DEFAULT 0,
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+  ];
+
+  for (const sql of tables) {
+    await db.run(sql);
+  }
 
   // Add new columns to existing tables if they don't exist yet
-  await addColumnIfMissing('tickets', 'category',          "TEXT NOT NULL DEFAULT 'software'");
-  await addColumnIfMissing('tickets', 'resolved_at',       'TEXT');
-  await addColumnIfMissing('tickets', 'sentiment',         'TEXT');
-  await addColumnIfMissing('tickets', 'atlas_suggestions', 'TEXT');
-  await addColumnIfMissing('tickets', 'resolution_report', 'TEXT');
-  await addColumnIfMissing('tickets', 'ai_auto_assigned',  'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('tickets', 'category',           "TEXT NOT NULL DEFAULT 'software'");
+  await addColumnIfMissing('tickets', 'resolved_at',        'TIMESTAMPTZ');
+  await addColumnIfMissing('tickets', 'sentiment',          'TEXT');
+  await addColumnIfMissing('tickets', 'atlas_suggestions',  'TEXT');
+  await addColumnIfMissing('tickets', 'resolution_report',  'TEXT');
+  await addColumnIfMissing('tickets', 'ai_auto_assigned',   'INTEGER NOT NULL DEFAULT 0');
 
   // Seed default settings
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'ai_enabled', 'true');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'company_name', 'Sentinel IT');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'smtp_host', '');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'smtp_port', '587');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'smtp_user', '');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'smtp_pass', '');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'smtp_from', '');
-  await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'smtp_secure', 'false');
+  const settingSeeds = [
+    ['ai_enabled',    'true'],
+    ['company_name',  'Sentinel IT'],
+    ['smtp_host',     ''],
+    ['smtp_port',     '587'],
+    ['smtp_user',     ''],
+    ['smtp_pass',     ''],
+    ['smtp_from',     ''],
+    ['smtp_secure',   'false'],
+  ];
+  for (const [key, value] of settingSeeds) {
+    await db.run(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING',
+      key, value
+    );
+  }
 
   // Seed default admin if no users exist
   const userCount = await db.get('SELECT COUNT(*) as count FROM users');

@@ -23,16 +23,16 @@ router.get('/', authenticate, async (req, res) => {
       ...params
     ),
     db.get(
-      `SELECT COUNT(*) as count FROM tickets t ${whereUser} ${isEmployee ? 'AND' : 'AND'} t.priority = 'critical' AND t.status NOT IN ('resolved','closed')`,
+      `SELECT COUNT(*) as count FROM tickets t ${whereUser} AND t.priority = 'critical' AND t.status NOT IN ('resolved','closed')`,
       ...params
     ),
     db.get(
-      `SELECT COUNT(*) as count FROM tickets t ${whereUser} ${isEmployee ? 'AND' : 'AND'} date(t.resolved_at) = date('now')`,
+      `SELECT COUNT(*) as count FROM tickets t ${whereUser} AND t.resolved_at::date = CURRENT_DATE`,
       ...params
     ),
     db.all(
-      `SELECT date(t.created_at) as day, COUNT(*) as count
-       FROM tickets t ${whereUser} ${isEmployee ? 'AND' : 'AND'} t.created_at >= date('now', '-6 days')
+      `SELECT DATE(t.created_at) as day, COUNT(*) as count
+       FROM tickets t ${whereUser} AND t.created_at >= CURRENT_DATE - INTERVAL '6 days'
        GROUP BY day ORDER BY day ASC`,
       ...params
     ),
@@ -47,8 +47,8 @@ router.get('/', authenticate, async (req, res) => {
       ...params
     ),
     db.get(
-      `SELECT AVG((julianday(t.resolved_at) - julianday(t.created_at)) * 24) as avg_hours
-       FROM tickets t ${whereUser} ${isEmployee ? 'AND' : 'AND'} t.resolved_at IS NOT NULL`,
+      `SELECT AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)) / 3600) as avg_hours
+       FROM tickets t ${whereUser} AND t.resolved_at IS NOT NULL`,
       ...params
     ),
   ]);

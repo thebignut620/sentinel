@@ -1,58 +1,80 @@
-import sqlite3Pkg from 'sqlite3';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { mkdirSync } from 'fs';
+import pg from 'pg';
+import { AsyncLocalStorage } from 'async_hooks';
 
-const { Database } = sqlite3Pkg;
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(__dirname, '../data');
-mkdirSync(dataDir, { recursive: true });
-const rawDb = new Database(join(dataDir, 'sentinel.db'));
+const { Pool, types } = pg;
 
-rawDb.run('PRAGMA journal_mode = WAL');
-rawDb.run('PRAGMA foreign_keys = ON');
+// Parse bigint (OID 20) as JS number — fixes COUNT(*) returning string
+types.setTypeParser(20, val => parseInt(val, 10));
 
-function get(sql, ...params) {
-  return new Promise((resolve, reject) => {
-    rawDb.get(sql, params, (err, row) => {
-      if (err) reject(err); else resolve(row);
-    });
-  });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+const txStore = new AsyncLocalStorage();
+
+function toPositional(sql) {
+  let n = 0;
+  return sql.replace(/\?/g, () => `$${++n}`);
 }
 
-function all(sql, ...params) {
-  return new Promise((resolve, reject) => {
-    rawDb.all(sql, params, (err, rows) => {
-      if (err) reject(err); else resolve(rows);
-    });
-  });
+function getConn() {
+  return txStore.getStore() ?? pool;
 }
 
-function run(sql, ...params) {
-  return new Promise((resolve, reject) => {
-    rawDb.run(sql, params, function (err) {
-      if (err) reject(err);
-      else resolve({ lastInsertRowid: this.lastID, changes: this.changes });
-    });
-  });
+async function get(sql, ...params) {
+  const res = await getConn().query(toPositional(sql), params);
+  return res.rows[0] ?? null;
 }
 
-function exec(sql) {
-  return new Promise((resolve, reject) => {
-    rawDb.exec(sql, (err) => {
-      if (err) reject(err); else resolve();
-    });
-  });
+async function all(sql, ...params) {
+  const res = await getConn().query(toPositional(sql), params);
+  return res.rows;
+}
+
+async function run(sql, ...params) {
+  const trimmed = sql.trimStart();
+  const converted = toPositional(trimmed);
+  const isInsert = /^INSERT\s/i.test(trimmed);
+  const hasReturning = /\bRETURNING\b/i.test(trimmed);
+
+  if (isInsert && !hasReturning) {
+    try {
+      const res = await getConn().query(`${converted} RETURNING id`, params);
+      return { lastInsertRowid: res.rows[0]?.id ?? null, changes: res.rowCount ?? 0 };
+    } catch (e) {
+      if (e.message?.includes('column "id" does not exist')) {
+        const res = await getConn().query(converted, params);
+        return { lastInsertRowid: null, changes: res.rowCount ?? 0 };
+      }
+      throw e;
+    }
+  }
+
+  const res = await getConn().query(converted, params);
+  return { lastInsertRowid: res.rows[0]?.id ?? null, changes: res.rowCount ?? 0 };
+}
+
+async function exec(sql) {
+  const client = await pool.connect();
+  try {
+    const statements = sql.split(/;\s*\n/).map(s => s.trim()).filter(Boolean);
+    for (const stmt of statements) {
+      await client.query(stmt);
+    }
+  } finally {
+    client.release();
+  }
 }
 
 async function transaction(fn) {
-  await run('BEGIN');
+  const client = await pool.connect();
   try {
-    await fn();
-    await run('COMMIT');
+    await client.query('BEGIN');
+    await txStore.run(client, fn);
+    await client.query('COMMIT');
   } catch (e) {
-    await run('ROLLBACK');
+    await client.query('ROLLBACK');
     throw e;
+  } finally {
+    client.release();
   }
 }
 

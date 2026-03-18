@@ -33,7 +33,7 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     );
     res.status(201).json(user);
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT' && err.message.includes('UNIQUE')) {
+    if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already in use' });
     }
     throw err;
@@ -63,7 +63,7 @@ router.patch('/:id', authenticate, requireRole('admin'), async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
   } catch (err) {
-    if (err.code === 'SQLITE_CONSTRAINT' && err.message.includes('UNIQUE')) {
+    if (err.code === '23505') {
       return res.status(409).json({ error: 'Email already in use' });
     }
     throw err;

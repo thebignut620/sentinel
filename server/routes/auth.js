@@ -68,7 +68,7 @@ router.post('/reset-password', async (req, res) => {
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
   const row = await db.get(
-    "SELECT * FROM password_reset_tokens WHERE token = ? AND used = 0 AND expires_at > datetime('now')",
+    'SELECT * FROM password_reset_tokens WHERE token = ? AND used = 0 AND expires_at > NOW()',
     token
   );
   if (!row) return res.status(400).json({ error: 'Invalid or expired reset link' });
