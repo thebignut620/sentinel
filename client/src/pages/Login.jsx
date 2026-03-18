@@ -128,85 +128,105 @@ function ForgotPassword({ onClose }) {
   );
 }
 
-// ── IT facts ticker ───────────────────────────────────────────────────────────
+// ── Typewriter fact ───────────────────────────────────────────────────────────
 const FACTS = [
-  'The first computer bug was a real insect — a moth found trapped in a Harvard Mark II relay in 1947 by Grace Hopper\'s team.',
-  'A modern smartphone contains more processing power than all of NASA\'s combined computing capacity during the Apollo moon missions.',
-  'The first 1 GB hard drive, the IBM 3380, was released in 1980 — it weighed 550 lbs and cost $40,000.',
-  'Python is named after Monty Python\'s Flying Circus, not the snake. Guido van Rossum was reading Monty Python scripts when he created it.',
-  'Linux powers 96.3% of the world\'s top one million web servers and runs on everything from smart fridges to the International Space Station.',
-  'The QWERTY keyboard layout was originally designed to slow typists down to prevent mechanical typewriter jams in 1873.',
-  'There are over 1.13 billion websites on the internet, but fewer than 200 million of them are actively maintained.',
-  'The first domain name ever registered was Symbolics.com on March 15, 1985 — it\'s still online today.',
-  'Email predates the World Wide Web by over 20 years. The first email was sent by Ray Tomlinson in 1971 on ARPANET.',
+  'The first computer bug was a real insect — a moth found in a Harvard Mark II relay in 1947 by Grace Hopper\'s team.',
+  'A modern smartphone has more computing power than all of NASA\'s combined capacity during the Apollo moon missions.',
+  'The first 1 GB hard drive weighed 550 lbs and cost $40,000 when released by IBM in 1980.',
+  'Python is named after Monty Python\'s Flying Circus, not the snake.',
+  'Linux powers 96.3% of the world\'s top one million web servers.',
+  'The QWERTY layout was designed to slow typists down to prevent mechanical typewriter jams in 1873.',
+  'The first domain name ever registered was Symbolics.com on March 15, 1985.',
+  'Email predates the World Wide Web by over 20 years — the first was sent in 1971 on ARPANET.',
   'Approximately 90% of all the world\'s data has been generated in just the last two years.',
-  'The average enterprise loses $5,600 per minute during an unplanned IT outage, according to Gartner research.',
-  '"Wi-Fi" doesn\'t stand for anything. The name was invented by a branding agency and was never a technical acronym.',
-  'The first computer virus, Creeper, appeared in 1971 on ARPANET — it displayed: "I\'m the creeper, catch me if you can!"',
-  'SHA-256, used in Bitcoin and TLS certificates, produces 2⁵⁶ possible hashes — more than the estimated atoms in the observable universe.',
-  'The term "bug" in software predates computers — engineers used it to mean any fault or defect as far back as Thomas Edison in 1878.',
+  'The average enterprise loses $5,600 per minute during an unplanned IT outage.',
+  '"Wi-Fi" doesn\'t stand for anything — the name was invented by a branding agency.',
+  'The first computer virus, Creeper, appeared in 1971 and displayed: "I\'m the creeper, catch me if you can!"',
+  'SHA-256 produces more possible hashes than there are estimated atoms in the observable universe.',
+  'The word "bug" in software engineering dates back to Thomas Edison, who used it for faults in 1878.',
+  'There are over 1.13 billion websites on the internet, but fewer than 200 million are actively maintained.',
 ];
 
-function Ticker() {
-  // Duplicate items to create a seamless loop
-  const items = [...FACTS, ...FACTS];
+// Typing speed: ~30ms per character (comfortable reading pace as it types)
+const CHAR_DELAY = 30;
+const PAUSE_AFTER = 2200;  // ms to hold after fully typed
+const FADE_DURATION = 600; // ms for fade out
+
+function TypewriterFact() {
+  const [factIndex, setFactIndex] = useState(0);
+  const [displayed, setDisplayed]   = useState('');
+  const [opacity, setOpacity]       = useState(1);
+  const stateRef = useRef({ index: 0, charIndex: 0, phase: 'typing' });
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    const s = stateRef.current;
+
+    const tick = () => {
+      if (s.phase === 'typing') {
+        const full = FACTS[s.index];
+        if (s.charIndex < full.length) {
+          s.charIndex++;
+          setDisplayed(full.slice(0, s.charIndex));
+          timerRef.current = setTimeout(tick, CHAR_DELAY);
+        } else {
+          // Finished typing — pause, then fade out
+          s.phase = 'pausing';
+          timerRef.current = setTimeout(() => {
+            s.phase = 'fading';
+            setOpacity(0);
+            timerRef.current = setTimeout(() => {
+              // Move to next fact, reset
+              s.index = (s.index + 1) % FACTS.length;
+              s.charIndex = 0;
+              s.phase = 'typing';
+              setDisplayed('');
+              setFactIndex(s.index);
+              setOpacity(1);
+              timerRef.current = setTimeout(tick, 80);
+            }, FADE_DURATION);
+          }, PAUSE_AFTER);
+        }
+      }
+    };
+
+    timerRef.current = setTimeout(tick, 400); // short initial delay
+    return () => clearTimeout(timerRef.current);
+  }, []);
 
   return (
     <div
-      className="absolute bottom-0 left-0 right-0 z-20 overflow-hidden"
+      className="relative z-10 w-full max-w-xl mx-auto text-center px-6 mb-10"
       style={{
-        background: 'linear-gradient(to right, #0a0a0a 0%, transparent 4%, transparent 96%, #0a0a0a 100%), #0d1210',
-        borderTop: '1px solid rgba(74,170,74,0.2)',
+        opacity,
+        transition: opacity === 0 ? `opacity ${FADE_DURATION}ms ease-out` : 'none',
       }}
     >
-      {/* Top edge glow line */}
-      <div style={{ height: '1px', background: 'linear-gradient(to right, transparent, rgba(74,170,74,0.5), transparent)' }} />
-
-      <div className="flex items-center h-10">
-        {/* Label tag */}
-        <div
-          className="shrink-0 flex items-center gap-2 px-4 h-full z-10"
+      <p
+        style={{
+          color: 'rgba(74,170,74,0.82)',
+          fontSize: '14px',
+          lineHeight: '1.7',
+          letterSpacing: '0.01em',
+          fontFamily: '"Titillium Web", sans-serif',
+          fontWeight: 400,
+          minHeight: '3em',
+        }}
+      >
+        {displayed}
+        {/* Blinking cursor */}
+        <span
           style={{
-            background: 'rgba(74,170,74,0.12)',
-            borderRight: '1px solid rgba(74,170,74,0.25)',
+            display: 'inline-block',
+            width: '2px',
+            height: '1em',
+            background: 'rgba(74,170,74,0.75)',
+            marginLeft: '2px',
+            verticalAlign: 'text-bottom',
+            animation: 'cursorBlink 1s step-end infinite',
           }}
-        >
-          <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4aaa4a', boxShadow: '0 0 6px #4aaa4a', animation: 'glowPulse 2s ease-in-out infinite', display: 'inline-block' }} />
-          <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', color: '#4aaa4a', fontFamily: 'monospace', textTransform: 'uppercase' }}>
-            IT INTEL
-          </span>
-        </div>
-
-        {/* Scrolling track */}
-        <div className="flex-1 overflow-hidden relative">
-          <div
-            style={{
-              display: 'flex',
-              whiteSpace: 'nowrap',
-              animation: 'tickerScroll 120s linear infinite',
-              willChange: 'transform',
-            }}
-          >
-            {items.map((fact, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
-                <span
-                  style={{
-                    fontSize: '12px',
-                    color: 'rgba(74,170,74,0.85)',
-                    fontFamily: '"Titillium Web", monospace',
-                    letterSpacing: '0.01em',
-                    padding: '0 48px',
-                  }}
-                >
-                  {fact}
-                </span>
-                {/* Separator dot */}
-                <span style={{ color: 'rgba(74,170,74,0.3)', fontSize: '18px', marginRight: '4px' }}>◆</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+        />
+      </p>
     </div>
   );
 }
@@ -241,25 +261,23 @@ export default function Login() {
 
   return (
     <>
-      {/* Inject ticker keyframe */}
       <style>{`
-        @keyframes tickerScroll {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
-        }
-        @keyframes glowPulse {
-          0%, 100% { box-shadow: 0 0 4px #4aaa4a; opacity: 0.7; }
-          50%       { box-shadow: 0 0 10px #4aaa4a; opacity: 1; }
+        @keyframes cursorBlink {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0; }
         }
       `}</style>
 
-      <div className="relative min-h-screen flex items-center justify-center p-6 pb-14 overflow-hidden bg-gray-950">
+      <div className="relative min-h-screen flex flex-col items-center justify-center p-6 overflow-hidden bg-gray-950">
         <ParticleCanvas />
 
         {/* Radial glow */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-[600px] h-[600px] rounded-full bg-pine-900/20 blur-3xl" />
         </div>
+
+        {/* Typewriter fact — sits above the card */}
+        <TypewriterFact />
 
         {/* Login card */}
         <div className={`relative z-10 w-full max-w-md animate-fadeIn ${shaking ? 'animate-shake' : ''}`}>
@@ -310,9 +328,6 @@ export default function Login() {
             </div>
           </div>
         </div>
-
-        {/* Ticker pinned to bottom */}
-        <Ticker />
       </div>
 
       {showForgot && <ForgotPassword onClose={() => setShowForgot(false)} />}
