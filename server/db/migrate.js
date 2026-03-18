@@ -91,11 +91,28 @@ export async function runMigrations() {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS knowledge_base (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      title       TEXT NOT NULL,
+      category    TEXT NOT NULL DEFAULT 'software',
+      problem     TEXT NOT NULL,
+      solution    TEXT NOT NULL,
+      steps       TEXT,
+      ticket_id   INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+      views       INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Add new columns to existing tables if they don't exist yet
-  await addColumnIfMissing('tickets', 'category', "TEXT NOT NULL DEFAULT 'software'");
-  await addColumnIfMissing('tickets', 'resolved_at', 'TEXT');
+  await addColumnIfMissing('tickets', 'category',          "TEXT NOT NULL DEFAULT 'software'");
+  await addColumnIfMissing('tickets', 'resolved_at',       'TEXT');
+  await addColumnIfMissing('tickets', 'sentiment',         'TEXT');
+  await addColumnIfMissing('tickets', 'atlas_suggestions', 'TEXT');
+  await addColumnIfMissing('tickets', 'resolution_report', 'TEXT');
+  await addColumnIfMissing('tickets', 'ai_auto_assigned',  'INTEGER NOT NULL DEFAULT 0');
 
   // Seed default settings
   await db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', 'ai_enabled', 'true');

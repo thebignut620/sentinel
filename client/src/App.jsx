@@ -11,6 +11,7 @@ import WelcomeModal from './components/WelcomeModal.jsx';
 import Login from './pages/Login.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import NotFound from './pages/NotFound.jsx';
+import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import AIHelpFlow from './pages/employee/AIHelpFlow.jsx';
 import MyTickets from './pages/employee/MyTickets.jsx';
@@ -88,6 +89,7 @@ function AppInner() {
           {/* Employee */}
           <Route path="help" element={<AIHelpFlow />} />
           <Route path="my-tickets" element={<MyTickets />} />
+          <Route path="knowledge-base" element={<KnowledgeBase />} />
 
           {/* Staff + Admin */}
           <Route

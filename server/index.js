@@ -11,6 +11,7 @@ import userRoutes from './routes/users.js';
 import settingsRoutes from './routes/settings.js';
 import uploadRoutes from './routes/uploads.js';
 import dashboardRoutes from './routes/dashboard.js';
+import kbRoutes from './routes/knowledge-base.js';
 import { authenticate } from './middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,7 @@ app.use('/api/tickets', authenticate, ticketRoutes);
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/settings', authenticate, settingsRoutes);
 app.use('/api/dashboard', authenticate, dashboardRoutes);
+app.use('/api/knowledge-base', authenticate, kbRoutes);
 app.use('/api', authenticate, uploadRoutes);
 
 // Error handler

@@ -7,6 +7,7 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import Confetti from '../../components/Confetti.jsx';
 import SmartTextarea from '../../components/SmartTextarea.jsx';
 import SpinnerButton from '../../components/SpinnerButton.jsx';
+import SentimentBadge from '../../components/SentimentBadge.jsx';
 import api from '../../api/client.js';
 
 const SERVER = (api.defaults.baseURL || 'http://localhost:3001/api').replace('/api', '');
@@ -92,24 +93,109 @@ function Timeline({ history, comments, ticket }) {
   );
 }
 
-// ── Resolution summary ────────────────────────────────────────────────────────
+// ── Resolution summary + ATLAS report ────────────────────────────────────────
 function ResolutionCard({ ticket }) {
   if (!['resolved','closed'].includes(ticket.status)) return null;
   const ms = ticket.resolved_at
     ? new Date(ticket.resolved_at) - new Date(ticket.created_at)
     : null;
   const hours = ms ? Math.round(ms / 3_600_000) : null;
+  const [showReport, setShowReport] = useState(false);
+
+  // Parse the markdown-like report into sections
+  const reportSections = ticket.resolution_report
+    ? ticket.resolution_report.split(/\n(?=\*\*)/).map(s => s.trim()).filter(Boolean)
+    : [];
+
   return (
     <div className="card p-5 border-pine-800/50">
       <div className="flex items-center gap-2 mb-3">
         <span className="text-pine-400 text-lg">✓</span>
         <h3 className="font-semibold text-pine-300 text-sm">Resolution Summary</h3>
+        {ticket.resolution_report && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pine-900/60 text-pine-400 border border-pine-800/50 ml-auto">
+            ATLAS report
+          </span>
+        )}
       </div>
-      <div className="grid grid-cols-2 gap-3 text-xs">
+      <div className="grid grid-cols-2 gap-3 text-xs mb-3">
         <div><span className="text-gray-500">Status</span><p className="text-pine-300 font-medium capitalize mt-0.5">{ticket.status}</p></div>
         <div><span className="text-gray-500">Resolved by</span><p className="text-gray-200 font-medium mt-0.5">{ticket.assignee_name || '—'}</p></div>
         {ticket.resolved_at && <div><span className="text-gray-500">Resolved at</span><p className="text-gray-300 mt-0.5">{new Date(ticket.resolved_at).toLocaleString()}</p></div>}
         {hours !== null && <div><span className="text-gray-500">Handle time</span><p className="text-gray-300 mt-0.5">{hours}h total</p></div>}
+      </div>
+
+      {ticket.resolution_report && (
+        <>
+          <button
+            onClick={() => setShowReport(r => !r)}
+            className="text-xs text-pine-500 hover:text-pine-400 transition-colors flex items-center gap-1"
+          >
+            {showReport ? '▾ Hide' : '▸ View'} ATLAS resolution report
+          </button>
+          {showReport && (
+            <div className="mt-3 space-y-3 animate-fadeIn">
+              {reportSections.length > 0 ? reportSections.map((section, i) => {
+                const boldMatch = section.match(/^\*\*(.+?):\*\*\s*([\s\S]*)/);
+                if (boldMatch) {
+                  return (
+                    <div key={i}>
+                      <p className="text-xs font-semibold text-gray-300 mb-0.5">{boldMatch[1]}</p>
+                      <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">{boldMatch[2]}</p>
+                    </div>
+                  );
+                }
+                return <p key={i} className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">{section}</p>;
+              }) : (
+                <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">{ticket.resolution_report}</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
+      {!ticket.resolution_report && ['resolved','closed'].includes(ticket.status) && (
+        <p className="text-[10px] text-gray-600 mt-1">ATLAS report generating in background…</p>
+      )}
+    </div>
+  );
+}
+
+// ── ATLAS similar ticket suggestions ─────────────────────────────────────────
+function AtlasSuggestions({ ticketId }) {
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/ai/suggestions/${ticketId}`)
+      .then(r => setSuggestions(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [ticketId]);
+
+  if (loading || suggestions.length === 0) return null;
+
+  const CATEGORY_ICONS_LOCAL = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-900/60 text-purple-400 border border-purple-800/50 font-medium">
+          ATLAS
+        </span>
+        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Similar Past Resolutions</h3>
+      </div>
+      <div className="space-y-2">
+        {suggestions.map(s => (
+          <Link key={s.id} to={`/tickets/${s.id}`}
+            className="flex items-start gap-2 p-3 rounded-lg hover:bg-gray-800 transition-colors group border border-transparent hover:border-gray-700">
+            <span className="text-sm shrink-0 mt-0.5">{CATEGORY_ICONS_LOCAL[s.category] || '📄'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-300 font-medium truncate group-hover:text-white">#{s.id} {s.title}</p>
+              <p className="text-[10px] text-gray-600 mt-0.5 line-clamp-2">{s.reason}</p>
+            </div>
+            <StatusBadge status={s.status} />
+          </Link>
+        ))}
       </div>
     </div>
   );
@@ -307,9 +393,15 @@ export default function TicketDetail() {
               <StatusBadge status={ticket.status} />
               <PriorityBadge priority={ticket.priority} />
               <CategoryBadge category={ticket.category} />
+              {ticket.sentiment && <SentimentBadge sentiment={ticket.sentiment} />}
               {ticket.ai_attempted === 1 && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-900/50 text-purple-300 border border-purple-800/50">
-                  🤖 AI attempted
+                  🤖 ATLAS attempted
+                </span>
+              )}
+              {ticket.ai_auto_assigned === 1 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-900/50 text-blue-300 border border-blue-800/50">
+                  ⚡ ATLAS assigned
                 </span>
               )}
             </div>
@@ -465,7 +557,10 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Resolution summary */}
+          {/* ATLAS similar resolutions */}
+          <AtlasSuggestions ticketId={id} />
+
+          {/* Resolution summary + ATLAS report */}
           <ResolutionCard ticket={ticket} />
 
           {/* Related tickets */}

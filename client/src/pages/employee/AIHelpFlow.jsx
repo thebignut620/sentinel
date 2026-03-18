@@ -1,11 +1,51 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import SmartTextarea from '../../components/SmartTextarea.jsx';
 import SpinnerButton from '../../components/SpinnerButton.jsx';
 import api from '../../api/client.js';
 
-const STEPS = { INPUT: 'input', THINKING: 'thinking', SOLUTION: 'solution', TICKET: 'ticket', DONE: 'done' };
+const STEPS = { INPUT: 'input', THINKING: 'thinking', SOLUTION: 'solution', KB: 'kb', TICKET: 'ticket', DONE: 'done' };
+const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
+
+function KBSuggestion({ article, onDismiss }) {
+  const steps = article.steps
+    ? (typeof article.steps === 'string' ? JSON.parse(article.steps) : article.steps)
+    : [];
+
+  return (
+    <div className="card border-pine-800/40 p-5 animate-fadeIn">
+      <div className="flex items-start gap-2 mb-3">
+        <span className="text-lg">{CATEGORY_ICONS[article.category] || '📄'}</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pine-900/60 text-pine-400 border border-pine-800/50 font-medium">
+              ATLAS KB
+            </span>
+            <span className="text-[10px] text-gray-600 capitalize">{article.category}</span>
+          </div>
+          <h4 className="text-sm font-semibold text-gray-200">{article.title}</h4>
+        </div>
+      </div>
+      <p className="text-xs text-gray-400 mb-3 leading-relaxed">{article.problem}</p>
+      {steps.length > 0 && (
+        <ol className="space-y-1.5 mb-3">
+          {steps.slice(0, 3).map((s, i) => (
+            <li key={i} className="flex gap-2 text-xs text-gray-400">
+              <span className="h-4 w-4 rounded-full bg-pine-900/50 text-pine-400 text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                {i + 1}
+              </span>
+              <span>{s}</span>
+            </li>
+          ))}
+          {steps.length > 3 && (
+            <li className="text-[10px] text-gray-600 ml-6">+{steps.length - 3} more steps…</li>
+          )}
+        </ol>
+      )}
+    </div>
+  );
+}
 
 export default function AIHelpFlow() {
   const navigate = useNavigate();
@@ -13,6 +53,8 @@ export default function AIHelpFlow() {
   const [step, setStep] = useState(STEPS.INPUT);
   const [problem, setProblem] = useState('');
   const [aiResult, setAiResult] = useState(null);
+  const [kbArticles, setKbArticles] = useState([]);
+  const [kbLoading, setKbLoading] = useState(false);
   const [ticketForm, setTicketForm] = useState({ title: '', priority: 'medium', category: 'software' });
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -29,9 +71,23 @@ export default function AIHelpFlow() {
       setStep(STEPS.SOLUTION);
     } catch (err) {
       setAiResult({ resolved: false, suggestion: null });
-      setError(err.response?.data?.error || 'AI service unavailable');
+      setError(err.response?.data?.error || 'ATLAS is temporarily offline.');
       setStep(STEPS.SOLUTION);
     }
+  };
+
+  const handleNeedHelp = async () => {
+    setTicketForm({ title: '', priority: 'medium', category: 'software' });
+    // Fetch KB suggestions before showing ticket form
+    setKbLoading(true);
+    setStep(STEPS.KB);
+    try {
+      const res = await api.get(`/knowledge-base?q=${encodeURIComponent(problem.trim().slice(0, 120))}`);
+      setKbArticles(res.data.slice(0, 3));
+    } catch {
+      setKbArticles([]);
+    }
+    setKbLoading(false);
   };
 
   const handleCreateTicket = async () => {
@@ -62,9 +118,14 @@ export default function AIHelpFlow() {
   return (
     <div className="max-w-2xl space-y-5 animate-fadeIn">
       <div>
-        <h1 className="text-2xl font-bold text-white">Get IT Help</h1>
+        <div className="flex items-center gap-2 mb-0.5">
+          <h1 className="text-2xl font-bold text-white">Get IT Help</h1>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium uppercase tracking-wider">
+            ATLAS
+          </span>
+        </div>
         <p className="text-gray-500 text-sm mt-1">
-          Describe your issue — our AI will try to solve it first.
+          Describe your issue — ATLAS will diagnose it first.
         </p>
       </div>
 
@@ -88,18 +149,18 @@ export default function AIHelpFlow() {
             disabled={!problem.trim()}
             className="btn-primary mt-3 px-5 py-2.5 text-sm"
           >
-            Ask AI for Help →
+            Ask ATLAS →
           </SpinnerButton>
         )}
       </div>
 
       {/* Thinking */}
       {step === STEPS.THINKING && (
-        <div className="card border-pine-900/40 p-6 flex items-center gap-4">
+        <div className="card border-pine-900/40 p-6 flex items-center gap-4 animate-fadeIn">
           <div className="h-8 w-8 border-2 border-pine-700 border-t-transparent rounded-full animate-spin shrink-0" />
           <div>
-            <p className="font-medium text-pine-300">Sentinel AI is analysing your issue…</p>
-            <p className="text-sm text-gray-500 mt-0.5">This usually takes a few seconds.</p>
+            <p className="font-medium text-pine-300">ATLAS is analyzing your issue…</p>
+            <p className="text-sm text-gray-500 mt-0.5">Diagnosing root cause and searching the knowledge base.</p>
           </div>
         </div>
       )}
@@ -108,19 +169,19 @@ export default function AIHelpFlow() {
       {step === STEPS.SOLUTION && (
         <>
           {aiResult?.suggestion ? (
-            <div className="card border-pine-800/50 p-6">
+            <div className="card border-pine-800/50 p-6 animate-fadeIn">
               <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg">🤖</span>
-                <span className="font-semibold text-pine-300">AI Suggested Solution</span>
+                <div className="h-6 w-6 rounded-full bg-pine-900/60 border border-pine-800/50 flex items-center justify-center text-xs font-bold text-pine-300">A</div>
+                <span className="font-semibold text-pine-300">ATLAS Diagnosis</span>
               </div>
               <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
                 {aiResult.suggestion}
               </div>
             </div>
           ) : (
-            <div className="card border-amber-800/50 p-5">
-              <p className="font-medium text-amber-300 mb-1">AI was unable to provide a solution</p>
-              <p className="text-sm text-gray-500">{error || 'This issue may require hands-on support.'}</p>
+            <div className="card border-amber-800/50 p-5 animate-fadeIn">
+              <p className="font-medium text-amber-300 mb-1">ATLAS could not resolve this remotely</p>
+              <p className="text-sm text-gray-500">{error || 'This issue requires hands-on IT support.'}</p>
             </div>
           )}
 
@@ -128,15 +189,12 @@ export default function AIHelpFlow() {
             <p className="font-medium text-gray-200 mb-4">Did this solve your problem?</p>
             <div className="flex gap-3">
               <button
-                onClick={() => { addToast('Great! Issue resolved.', 'success'); navigate('/my-tickets'); }}
+                onClick={() => { addToast('Issue resolved. Logged by ATLAS.', 'success'); navigate('/my-tickets'); }}
                 className="flex-1 bg-pine-800/60 hover:bg-pine-700/60 border border-pine-700/50 text-pine-300 px-4 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95"
               >
                 ✓ Yes, resolved!
               </button>
-              <button
-                onClick={() => { setTicketForm({ title: '', priority: 'medium', category: 'software' }); setStep(STEPS.TICKET); }}
-                className="btn-secondary flex-1 px-4 py-2.5 text-sm"
-              >
+              <button onClick={handleNeedHelp} className="btn-secondary flex-1 px-4 py-2.5 text-sm">
                 ✗ Still need help
               </button>
             </div>
@@ -144,11 +202,65 @@ export default function AIHelpFlow() {
         </>
       )}
 
+      {/* KB suggestions step */}
+      {step === STEPS.KB && (
+        <div className="space-y-4 animate-fadeIn">
+          <div className="card p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-sm font-semibold text-gray-200">ATLAS Knowledge Base</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pine-900/60 text-pine-400 border border-pine-800/50">Auto-search</span>
+            </div>
+            <p className="text-xs text-gray-500">Checking past resolutions for your issue…</p>
+          </div>
+
+          {kbLoading ? (
+            <div className="space-y-3">
+              {[1,2].map(i => <div key={i} className="skeleton h-24 rounded-xl" />)}
+            </div>
+          ) : kbArticles.length > 0 ? (
+            <>
+              <p className="text-xs text-gray-500 px-1">ATLAS found {kbArticles.length} similar resolution{kbArticles.length !== 1 ? 's' : ''}:</p>
+              {kbArticles.map(a => <KBSuggestion key={a.id} article={a} />)}
+              <div className="card p-5">
+                <p className="text-sm font-medium text-gray-300 mb-3">Did any of these solve your issue?</p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { addToast('Marked as resolved via KB.', 'success'); navigate('/my-tickets'); }}
+                    className="flex-1 bg-pine-800/60 hover:bg-pine-700/60 border border-pine-700/50 text-pine-300 px-4 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95"
+                  >
+                    ✓ Fixed it!
+                  </button>
+                  <button
+                    onClick={() => setStep(STEPS.TICKET)}
+                    className="btn-secondary flex-1 px-4 py-2.5 text-sm"
+                  >
+                    Still need a ticket
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="card p-5 border-amber-900/30">
+              <p className="text-sm text-amber-300 mb-1">No matching articles found</p>
+              <p className="text-xs text-gray-500 mb-4">ATLAS will create one automatically when your ticket is resolved.</p>
+              <button onClick={() => setStep(STEPS.TICKET)} className="btn-primary px-5 py-2.5 text-sm">
+                Submit a Ticket →
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Create ticket form */}
       {step === STEPS.TICKET && (
-        <div className="card p-6">
-          <h2 className="font-semibold text-gray-200 mb-1">Create a Support Ticket</h2>
-          <p className="text-sm text-gray-500 mb-5">Our IT team will review and get back to you soon.</p>
+        <div className="card p-6 animate-fadeIn">
+          <div className="flex items-center gap-2 mb-1">
+            <h2 className="font-semibold text-gray-200">Create a Support Ticket</h2>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-900/60 text-purple-400 border border-purple-800/50">
+              ATLAS auto-categorizes
+            </span>
+          </div>
+          <p className="text-sm text-gray-500 mb-5">ATLAS will set category and priority automatically.</p>
 
           {error && (
             <div className="bg-red-900/40 border border-red-800/50 text-red-300 px-3 py-2 rounded-lg text-sm mb-4">
@@ -176,10 +288,10 @@ export default function AIHelpFlow() {
                   onChange={e => setTicketForm(f => ({ ...f, priority: e.target.value }))}
                   className="input w-full"
                 >
-                  <option value="low">Low — minor inconvenience</option>
-                  <option value="medium">Medium — affecting work</option>
-                  <option value="high">High — blocking work</option>
-                  <option value="critical">Critical — system down</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="critical">Critical</option>
                 </select>
               </div>
               <div>
@@ -198,6 +310,10 @@ export default function AIHelpFlow() {
               </div>
             </div>
 
+            <p className="text-[11px] text-gray-600 -mt-1">
+              ATLAS will override these with AI-detected values on submission.
+            </p>
+
             <div className="flex gap-3 pt-1">
               <SpinnerButton
                 onClick={handleCreateTicket}
@@ -209,7 +325,7 @@ export default function AIHelpFlow() {
                 Submit Ticket
               </SpinnerButton>
               <button
-                onClick={() => setStep(STEPS.SOLUTION)}
+                onClick={() => setStep(STEPS.KB)}
                 className="btn-secondary px-4 py-2.5 text-sm"
               >
                 ← Back
@@ -221,11 +337,14 @@ export default function AIHelpFlow() {
 
       {/* Done */}
       {step === STEPS.DONE && (
-        <div className="card border-pine-800/50 p-8 text-center">
+        <div className="card border-pine-800/50 p-8 text-center animate-fadeIn">
           <div className="text-4xl mb-3">✅</div>
           <h2 className="text-lg font-semibold text-pine-300 mb-1">Ticket Created!</h2>
-          <p className="text-sm text-gray-500 mb-6">
-            Ticket #{createdTicketId} submitted. Our IT team will be in touch soon.
+          <p className="text-sm text-gray-500 mb-2">
+            Ticket #{createdTicketId} submitted. ATLAS has auto-categorized and assigned it.
+          </p>
+          <p className="text-xs text-gray-600 mb-6">
+            Our IT team will be in touch soon.
           </p>
           <div className="flex gap-3 justify-center">
             <button
@@ -235,7 +354,7 @@ export default function AIHelpFlow() {
               View Ticket
             </button>
             <button
-              onClick={() => { setProblem(''); setAiResult(null); setError(''); setStep(STEPS.INPUT); }}
+              onClick={() => { setProblem(''); setAiResult(null); setError(''); setKbArticles([]); setStep(STEPS.INPUT); }}
               className="btn-secondary px-5 py-2.5 text-sm"
             >
               Report Another Issue

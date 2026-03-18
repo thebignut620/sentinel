@@ -5,6 +5,7 @@ import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badg
 import { SkeletonTable } from '../../components/Skeleton.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import SearchInput from '../../components/SearchInput.jsx';
+import SentimentBadge from '../../components/SentimentBadge.jsx';
 import sentinelLogo from '../../assets/sentinel_logo.png';
 import api from '../../api/client.js';
 
@@ -109,7 +110,12 @@ function KanbanCard({ ticket, staffUsers, onUpdate, selected, onToggleSelect, bu
 
         {/* Meta row */}
         <div className="flex items-center justify-between gap-2 mb-2">
-          <PriorityBadge priority={ticket.priority} />
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <PriorityBadge priority={ticket.priority} />
+            {ticket.sentiment && ticket.sentiment !== 'calm' && (
+              <SentimentBadge sentiment={ticket.sentiment} size="xs" />
+            )}
+          </div>
           <CategoryBadge category={ticket.category} />
         </div>
 
@@ -262,7 +268,12 @@ function ListRow({ ticket, selected, onToggleSelect, bulkMode, onQuickUpdate, st
       <td className="px-3 py-3 text-gray-400 text-xs">{ticket.submitter_name}</td>
       <td className="px-3 py-3"><CategoryBadge category={ticket.category} /></td>
       <td className="px-3 py-3"><StatusBadge status={ticket.status} /></td>
-      <td className="px-3 py-3"><PriorityBadge priority={ticket.priority} /></td>
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-1.5">
+          <PriorityBadge priority={ticket.priority} />
+          {ticket.sentiment && ticket.sentiment !== 'calm' && <SentimentBadge sentiment={ticket.sentiment} size="xs" />}
+        </div>
+      </td>
       <td className="px-3 py-3">
         <div className="relative">
           <button onClick={() => setShowAssign(a => !a)}

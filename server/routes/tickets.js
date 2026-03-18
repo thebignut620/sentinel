@@ -2,6 +2,7 @@ import express from 'express';
 import db from '../db/connection.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { sendTicketStatusEmail } from '../services/email.js';
+import * as atlas from '../services/atlas.js';
 
 const router = express.Router();
 
@@ -133,8 +134,8 @@ router.get('/:id', authenticate, async (req, res) => {
 router.post('/', authenticate, async (req, res) => {
   const {
     title, description,
-    priority = 'medium',
-    category = 'software',
+    priority: clientPriority = 'medium',
+    category: clientCategory = 'software',
     ai_attempted = false,
     ai_suggestion = null,
   } = req.body;
@@ -143,17 +144,55 @@ router.post('/', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Title and description are required' });
   }
 
+  // ── ATLAS: auto-categorize, auto-prioritize, sentiment detection (features 1–3)
+  const [analysis, assigneeId] = await Promise.all([
+    atlas.analyzeTicket(title.trim(), description.trim()),
+    atlas.autoAssign(req.user.id),  // feature 6: auto-assign
+  ]);
+
+  const finalCategory  = analysis?.category  ?? clientCategory;
+  const finalPriority  = analysis?.priority  ?? clientPriority;
+  const finalSentiment = analysis?.sentiment ?? null;
+  const finalAssignee  = assigneeId ?? null;
+
   const result = await db.run(`
-    INSERT INTO tickets (title, description, priority, category, submitter_id, ai_attempted, ai_suggestion)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, title.trim(), description.trim(), priority, category, req.user.id, ai_attempted ? 1 : 0, ai_suggestion);
+    INSERT INTO tickets
+      (title, description, priority, category, submitter_id, assignee_id,
+       ai_attempted, ai_suggestion, sentiment, ai_auto_assigned)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+    title.trim(), description.trim(),
+    finalPriority, finalCategory,
+    req.user.id, finalAssignee,
+    ai_attempted ? 1 : 0, ai_suggestion,
+    finalSentiment, finalAssignee ? 1 : 0
+  );
 
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastInsertRowid);
 
   // Log creation
   await logHistory(ticket.id, req.user.id, 'created', null, 'open');
+  if (finalAssignee) {
+    const assigneeName = (await db.get('SELECT name FROM users WHERE id = ?', finalAssignee))?.name;
+    await logHistory(ticket.id, req.user.id, 'assigned', null, assigneeName ?? 'ATLAS auto-assigned');
+  }
 
-  res.status(201).json(ticket);
+  // ── ATLAS: find similar tickets async (feature 4) — don't block response
+  setImmediate(async () => {
+    try {
+      const similar = await atlas.findSimilarTickets(ticket.id, title.trim(), description.trim());
+      if (similar.length > 0) {
+        await db.run(
+          'UPDATE tickets SET atlas_suggestions = ? WHERE id = ?',
+          JSON.stringify(similar), ticket.id
+        );
+      }
+    } catch (e) {
+      console.error('[ATLAS] background suggestions error:', e.message);
+    }
+  });
+
+  res.status(201).json({ ...ticket, assignee_id: finalAssignee });
 });
 
 // Bulk update tickets (staff/admin only)
@@ -250,6 +289,50 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
     if (submitter) {
       sendTicketStatusEmail({ to: submitter.email, name: submitter.name, ticketId: ticket.id, title: ticket.title, newStatus: status });
     }
+  }
+
+  // ── ATLAS: resolution report + KB article on first resolve/close (features 5 + 7)
+  const isFirstClose = ['resolved', 'closed'].includes(status)
+    && !['resolved', 'closed'].includes(ticket.status)
+    && !ticket.resolution_report;
+
+  if (isFirstClose) {
+    setImmediate(async () => {
+      try {
+        const [comments, notes, freshTicket] = await Promise.all([
+          db.all(`SELECT tc.body, u.name as author_name FROM ticket_comments tc JOIN users u ON tc.user_id = u.id WHERE tc.ticket_id = ? ORDER BY tc.created_at`, req.params.id),
+          db.all(`SELECT tn.body, u.name as author_name FROM ticket_notes tn JOIN users u ON tn.user_id = u.id WHERE tn.ticket_id = ? ORDER BY tn.created_at`, req.params.id),
+          db.get(`SELECT t.*, u.name as submitter_name, a.name as assignee_name FROM tickets t JOIN users u ON t.submitter_id = u.id LEFT JOIN users a ON t.assignee_id = a.id WHERE t.id = ?`, req.params.id),
+        ]);
+
+        // Feature 5: resolution report
+        const report = await atlas.generateResolutionReport(freshTicket, comments, notes);
+        if (report) {
+          await db.run('UPDATE tickets SET resolution_report = ? WHERE id = ?', report, req.params.id);
+        }
+
+        // Feature 7: KB article
+        const existing = await db.get('SELECT id FROM knowledge_base WHERE ticket_id = ?', req.params.id);
+        if (!existing) {
+          const article = await atlas.generateKBArticle(freshTicket, report);
+          if (article) {
+            await db.run(`
+              INSERT INTO knowledge_base (title, category, problem, solution, steps, ticket_id)
+              VALUES (?, ?, ?, ?, ?, ?)
+            `,
+              article.title,
+              freshTicket.category,
+              article.problem,
+              article.solution,
+              JSON.stringify(article.steps || []),
+              req.params.id
+            );
+          }
+        }
+      } catch (e) {
+        console.error('[ATLAS] post-resolution generation error:', e.message);
+      }
+    });
   }
 
   res.json(updated);

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badges.jsx';
 import { SkeletonTable } from '../../components/Skeleton.jsx';
 import SearchInput from '../../components/SearchInput.jsx';
+import SentimentBadge from '../../components/SentimentBadge.jsx';
 import sentinelLogo from '../../assets/sentinel_logo.png';
 import api from '../../api/client.js';
 
@@ -112,6 +113,7 @@ export default function MyTickets() {
                   <CategoryBadge category={t.category} />
                   <StatusBadge status={t.status} />
                   <PriorityBadge priority={t.priority} />
+                  {t.sentiment && t.sentiment !== 'calm' && <SentimentBadge sentiment={t.sentiment} size="xs" />}
                 </div>
                 {t.assignee_name && (
                   <div className="h-7 w-7 rounded-full bg-pine-900/60 border border-pine-800/40 flex items-center justify-center text-pine-400 text-[9px] font-bold shrink-0">
