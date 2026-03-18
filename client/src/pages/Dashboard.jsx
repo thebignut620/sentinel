@@ -225,7 +225,9 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-6 animate-fadeIn relative">
+      {/* Dot grid background */}
+      <div className="fixed inset-0 dot-grid opacity-30 pointer-events-none" />
       {/* Welcome */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>

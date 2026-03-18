@@ -4,6 +4,9 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badges.jsx';
 import { SkeletonCard } from '../../components/Skeleton.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import Confetti from '../../components/Confetti.jsx';
+import SmartTextarea from '../../components/SmartTextarea.jsx';
+import SpinnerButton from '../../components/SpinnerButton.jsx';
 import api from '../../api/client.js';
 
 const SERVER = (api.defaults.baseURL || 'http://localhost:3001/api').replace('/api', '');
@@ -155,8 +158,10 @@ export default function TicketDetail() {
   const [comment, setComment]     = useState('');
   const [note, setNote]           = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [updateSuccess, setUpdateSuccess] = useState(false);
   const [uploading, setUploading]  = useState(false);
   const [newCommentId, setNewCommentId] = useState(null);
+  const [showConfetti, setShowConfetti] = useState(false);
 
   const [editStatus,   setEditStatus]   = useState('');
   const [editPriority, setEditPriority] = useState('');
@@ -192,11 +197,16 @@ export default function TicketDetail() {
   const handleUpdate = async () => {
     setSubmitting(true);
     try {
+      const wasNotResolved = ticket?.status !== 'resolved' && ticket?.priority === 'critical';
       await api.patch(`/tickets/${id}`, {
         status: editStatus, priority: editPriority,
         category: editCategory, assignee_id: editAssignee || null,
       });
       addToast('Ticket updated', 'success');
+      setUpdateSuccess(true);
+      setTimeout(() => setUpdateSuccess(false), 2000);
+      // Confetti when critical ticket gets resolved
+      if (wasNotResolved && editStatus === 'resolved') setShowConfetti(true);
       await loadAll();
     } catch (err) {
       addToast(err.response?.data?.error || 'Update failed', 'error');
@@ -279,6 +289,7 @@ export default function TicketDetail() {
 
   return (
     <div className="animate-fadeIn">
+      {showConfetti && <Confetti onDone={() => setShowConfetti(false)} />}
       <button onClick={() => navigate(-1)} className="text-sm text-gray-500 hover:text-gray-300 mb-4 flex items-center gap-1 transition-colors">
         ← Back
       </button>
@@ -395,11 +406,21 @@ export default function TicketDetail() {
               </div>
             )}
             <form onSubmit={handleComment} className="space-y-2" ref={commentBoxRef}>
-              <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
-                className="input w-full resize-none" placeholder="Write a comment…" />
-              <button type="submit" disabled={!comment.trim() || submitting} className="btn-primary px-4 py-2 text-sm">
+              <SmartTextarea
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+                rows={3}
+                placeholder="Write a comment…"
+                maxLength={1000}
+              />
+              <SpinnerButton
+                type="submit"
+                disabled={!comment.trim() || submitting}
+                loading={submitting}
+                className="btn-primary px-4 py-2 text-sm"
+              >
                 Post Comment
-              </button>
+              </SpinnerButton>
             </form>
           </div>
 
@@ -426,10 +447,15 @@ export default function TicketDetail() {
                 </div>
               )}
               <form onSubmit={handleNote} className="space-y-2">
-                <textarea value={note} onChange={e => setNote(e.target.value)} rows={2}
-                  className="input w-full resize-none"
+                <SmartTextarea
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  rows={2}
+                  className=""
                   style={{ borderColor: 'rgba(180,120,0,0.3)' }}
-                  placeholder="Add an internal note…" />
+                  placeholder="Add an internal note…"
+                  maxLength={1000}
+                />
                 <button type="submit" disabled={!note.trim() || submitting}
                   className="px-4 py-2 text-xs rounded-lg transition-colors active:scale-95 disabled:opacity-50"
                   style={{ background: 'rgba(120,80,0,0.3)', color: '#fbbf24', border: '1px solid rgba(180,120,0,0.3)' }}>
@@ -471,9 +497,15 @@ export default function TicketDetail() {
                     {staffUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
-                <button onClick={handleUpdate} disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
-                  {submitting ? 'Saving…' : 'Save Changes'}
-                </button>
+                <SpinnerButton
+                  onClick={handleUpdate}
+                  disabled={submitting}
+                  loading={submitting}
+                  success={updateSuccess}
+                  className="btn-primary w-full py-2.5 text-sm"
+                >
+                  Save Changes
+                </SpinnerButton>
               </div>
             </div>
           )}

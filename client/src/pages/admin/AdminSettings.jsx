@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import { SkeletonCard } from '../../components/Skeleton.jsx';
+import SpinnerButton from '../../components/SpinnerButton.jsx';
 import api from '../../api/client.js';
 
 function Toggle({ value, onChange }) {
@@ -164,9 +165,9 @@ export default function AdminSettings() {
           </div>
         </div>
 
-        <button type="submit" disabled={saving} className="btn-primary w-full py-3 text-sm">
-          {saving ? 'Saving…' : 'Save Settings'}
-        </button>
+        <SpinnerButton type="submit" disabled={saving} loading={saving} className="btn-primary w-full py-3 text-sm">
+          Save Settings
+        </SpinnerButton>
       </form>
     </div>
   );

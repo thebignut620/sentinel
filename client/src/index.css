@@ -57,3 +57,31 @@
 .page-enter {
   animation: fadeIn 0.3s ease-out forwards;
 }
+
+/* Dot grid background */
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(74,170,74,0.12) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+
+/* SmartTextarea auto-resize support */
+.smart-textarea {
+  min-height: 80px;
+  resize: none;
+  overflow: hidden;
+}
+
+/* Search input clear button */
+.search-wrap { position: relative; }
+.search-wrap input { padding-right: 2rem; }
+.search-wrap .clear-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: theme('colors.gray.500');
+  cursor: pointer;
+  line-height: 1;
+}
+.search-wrap .clear-btn:hover { color: theme('colors.gray.300'); }

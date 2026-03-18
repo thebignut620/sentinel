@@ -4,6 +4,8 @@ import { useAuth } from '../../contexts/AuthContext.jsx';
 import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badges.jsx';
 import { SkeletonTable } from '../../components/Skeleton.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import SearchInput from '../../components/SearchInput.jsx';
+import sentinelLogo from '../../assets/sentinel_logo.png';
 import api from '../../api/client.js';
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -399,8 +401,7 @@ export default function TicketList() {
 
       {/* Filters */}
       <div className="card p-3 flex flex-wrap gap-3 items-center">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search tickets…" className="input flex-1 min-w-40" />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search tickets…" className="flex-1 min-w-40" />
         <select value={filterPriority} onChange={e => setFP(e.target.value)} className="input">
           <option value="all">All priorities</option>
           {['critical','high','medium','low'].map(p => <option key={p} value={p}>{p}</option>)}
@@ -449,7 +450,12 @@ export default function TicketList() {
       ) : (
         /* ── List ── */
         visible.length === 0 ? (
-          <div className="card py-14 text-center text-gray-600">No tickets match.</div>
+          <div className="card py-16 text-center animate-fadeIn">
+            <div className="flex flex-col items-center gap-3">
+              <img src={sentinelLogo} alt="Sentinel" className="h-10 w-auto opacity-20" />
+              <p className="text-gray-500 text-sm">No tickets match your filters.</p>
+            </div>
+          </div>
         ) : (
           <div className="card overflow-hidden">
             <table className="w-full text-sm">

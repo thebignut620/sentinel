@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badges.jsx';
 import { SkeletonTable } from '../../components/Skeleton.jsx';
+import SearchInput from '../../components/SearchInput.jsx';
+import sentinelLogo from '../../assets/sentinel_logo.png';
 import api from '../../api/client.js';
 
 const PRIORITY_STRIP = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-gray-600' };
@@ -53,8 +55,7 @@ export default function MyTickets() {
         </Link>
       </div>
 
-      <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-        placeholder="Search tickets…" className="input w-full max-w-sm" />
+      <SearchInput value={search} onChange={setSearch} placeholder="Search tickets…" className="w-full max-w-sm" />
 
       <div className="flex gap-2 flex-wrap">
         {['all','open','in_progress','resolved','closed'].map(f => (
@@ -71,8 +72,21 @@ export default function MyTickets() {
       {loading ? (
         <SkeletonTable rows={4} />
       ) : filtered.length === 0 ? (
-        <div className="card py-14 text-center text-gray-600">
-          {filter === 'all' && !search ? 'You have no tickets yet.' : 'No tickets match.'}
+        <div className="card py-16 text-center animate-fadeIn">
+          {filter === 'all' && !search ? (
+            <div className="flex flex-col items-center gap-4">
+              <img src={sentinelLogo} alt="Sentinel" className="h-12 w-auto opacity-20" />
+              <div>
+                <p className="text-gray-400 font-medium">No tickets yet.</p>
+                <p className="text-gray-600 text-sm mt-1">Your systems are running clean.</p>
+              </div>
+              <Link to="/help" className="btn-primary px-5 py-2 text-sm mt-1">
+                Report an Issue
+              </Link>
+            </div>
+          ) : (
+            <p className="text-gray-600">No tickets match your search.</p>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

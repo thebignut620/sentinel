@@ -22,8 +22,9 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     localStorage.setItem('sentinel_token', res.data.token);
-    setUser(res.data.user);
-    return res.data.user;
+    const isNew = !localStorage.getItem('sentinel_welcomed');
+    setUser({ ...res.data.user, _isNew: isNew });
+    return { ...res.data.user, _isNew: isNew };
   };
 
   const logout = () => {

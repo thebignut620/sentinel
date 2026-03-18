@@ -15,7 +15,7 @@ api.interceptors.response.use(
   err => {
     if (err.response?.status === 401 && !err.config.url.includes('/auth/')) {
       localStorage.removeItem('sentinel_token');
-      window.location.href = '/login';
+      window.dispatchEvent(new Event('sentinel:session-expired'));
     }
     return Promise.reject(err);
   }

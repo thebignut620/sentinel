@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import SearchInput from '../../components/SearchInput.jsx';
+import SpinnerButton from '../../components/SpinnerButton.jsx';
 import api from '../../api/client.js';
 
 const EMPTY_FORM = { name: '', email: '', password: '', role: 'employee' };
@@ -230,8 +232,7 @@ export default function UserManagement() {
 
       {/* Filters */}
       <div className="card p-3 flex flex-wrap gap-3 items-center">
-        <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-          placeholder="Search by name or email…" className="input flex-1 min-w-48" />
+        <SearchInput value={search} onChange={setSearch} placeholder="Search by name or email…" className="flex-1 min-w-48" />
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className="input">
           <option value="all">All roles</option>
           <option value="admin">Admin</option>
@@ -307,9 +308,9 @@ export default function UserManagement() {
                 </select>
               </div>
               <div className="flex gap-3 pt-1">
-                <button type="submit" disabled={submitting} className="btn-primary flex-1 py-2.5 text-sm">
-                  {submitting ? 'Saving…' : editing ? 'Update' : 'Create'}
-                </button>
+                <SpinnerButton type="submit" disabled={submitting} loading={submitting} className="btn-primary flex-1 py-2.5 text-sm">
+                  {editing ? 'Update' : 'Create'}
+                </SpinnerButton>
                 <button type="button" onClick={() => setShowModal(false)} className="btn-secondary flex-1 py-2.5 text-sm">
                   Cancel
                 </button>

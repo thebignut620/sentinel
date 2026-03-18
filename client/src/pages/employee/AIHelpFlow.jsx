@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext.jsx';
+import SmartTextarea from '../../components/SmartTextarea.jsx';
+import SpinnerButton from '../../components/SpinnerButton.jsx';
 import api from '../../api/client.js';
 
 const STEPS = { INPUT: 'input', THINKING: 'thinking', SOLUTION: 'solution', TICKET: 'ticket', DONE: 'done' };
@@ -13,6 +15,7 @@ export default function AIHelpFlow() {
   const [aiResult, setAiResult] = useState(null);
   const [ticketForm, setTicketForm] = useState({ title: '', priority: 'medium', category: 'software' });
   const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
   const [createdTicketId, setCreatedTicketId] = useState(null);
   const [error, setError] = useState('');
 
@@ -45,7 +48,8 @@ export default function AIHelpFlow() {
         ai_suggestion: aiResult?.suggestion || null,
       });
       setCreatedTicketId(res.data.id);
-      setStep(STEPS.DONE);
+      setSubmitSuccess(true);
+      setTimeout(() => { setSubmitSuccess(false); setStep(STEPS.DONE); }, 800);
       addToast(`Ticket #${res.data.id} created!`, 'success');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create ticket');
@@ -69,22 +73,23 @@ export default function AIHelpFlow() {
         <label className="block text-sm font-medium text-gray-300 mb-2">
           What IT issue are you experiencing?
         </label>
-        <textarea
+        <SmartTextarea
           value={problem}
           onChange={e => setProblem(e.target.value)}
           rows={5}
           disabled={step !== STEPS.INPUT}
-          className="input w-full resize-none disabled:opacity-60"
+          className="disabled:opacity-60"
           placeholder="e.g. My VPN keeps disconnecting after the latest Windows update…"
+          maxLength={2000}
         />
         {step === STEPS.INPUT && (
-          <button
+          <SpinnerButton
             onClick={handleAskAI}
             disabled={!problem.trim()}
             className="btn-primary mt-3 px-5 py-2.5 text-sm"
           >
             Ask AI for Help →
-          </button>
+          </SpinnerButton>
         )}
       </div>
 
@@ -194,13 +199,15 @@ export default function AIHelpFlow() {
             </div>
 
             <div className="flex gap-3 pt-1">
-              <button
+              <SpinnerButton
                 onClick={handleCreateTicket}
                 disabled={!ticketForm.title.trim() || submitting}
+                loading={submitting}
+                success={submitSuccess}
                 className="btn-primary px-5 py-2.5 text-sm"
               >
-                {submitting ? 'Submitting…' : 'Submit Ticket'}
-              </button>
+                Submit Ticket
+              </SpinnerButton>
               <button
                 onClick={() => setStep(STEPS.SOLUTION)}
                 className="btn-secondary px-4 py-2.5 text-sm"

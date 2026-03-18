@@ -27,6 +27,10 @@ export default {
           '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        fadeInScale: {
+          '0%': { opacity: '0', transform: 'scale(0.92)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
         slideInRight: {
           '0%': { opacity: '0', transform: 'translateX(100%)' },
           '100%': { opacity: '1', transform: 'translateX(0)' },
@@ -34,6 +38,10 @@ export default {
         slideOutRight: {
           '0%': { opacity: '1', transform: 'translateX(0)' },
           '100%': { opacity: '0', transform: 'translateX(100%)' },
+        },
+        slideDown: {
+          '0%': { opacity: '0', transform: 'translateY(-100%)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         shake: {
           '0%, 100%': { transform: 'translateX(0)' },
@@ -56,14 +64,38 @@ export default {
           '0%, 100%': { boxShadow: '0 0 8px rgba(74,170,74,0.3)' },
           '50%': { boxShadow: '0 0 20px rgba(74,170,74,0.6)' },
         },
+        logoPulse: {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.5', transform: 'scale(0.95)' },
+        },
+        progressIndeterminate: {
+          '0%': { transform: 'translateX(-100%) scaleX(0.3)' },
+          '50%': { transform: 'translateX(50%) scaleX(0.6)' },
+          '100%': { transform: 'translateX(200%) scaleX(0.3)' },
+        },
+        checkmarkPop: {
+          '0%': { opacity: '0', transform: 'scale(0.4) rotate(-20deg)' },
+          '60%': { transform: 'scale(1.2) rotate(5deg)' },
+          '100%': { opacity: '1', transform: 'scale(1) rotate(0deg)' },
+        },
+        spinnerFade: {
+          '0%': { opacity: '0', transform: 'scale(0.6)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
       },
       animation: {
         fadeIn: 'fadeIn 0.5s ease-out forwards',
+        fadeInScale: 'fadeInScale 0.3s ease-out forwards',
         slideInRight: 'slideInRight 0.35s ease-out forwards',
         slideOutRight: 'slideOutRight 0.3s ease-in forwards',
+        slideDown: 'slideDown 0.3s ease-out forwards',
         shake: 'shake 0.5s ease-in-out',
         shimmer: 'shimmer 1.8s infinite linear',
         glowPulse: 'glowPulse 2s ease-in-out infinite',
+        logoPulse: 'logoPulse 1.6s ease-in-out infinite',
+        progressIndeterminate: 'progressIndeterminate 1.4s ease-in-out infinite',
+        checkmarkPop: 'checkmarkPop 0.4s cubic-bezier(0.175,0.885,0.32,1.275) forwards',
+        spinnerFade: 'spinnerFade 0.2s ease-out forwards',
       },
     },
   },
