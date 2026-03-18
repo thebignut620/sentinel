@@ -3,7 +3,57 @@
 @tailwind utilities;
 
 @layer base {
+  body {
+    @apply bg-gray-950 text-gray-100;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: 'Titillium Web', sans-serif;
   }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-gray-900; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-600; }
+
+  /* Pine focus rings */
+  input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+    outline: 2px solid theme('colors.pine.500');
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl shadow-lg shadow-black/30;
+  }
+
+  .input {
+    @apply bg-gray-800 border border-gray-700 text-gray-100 rounded-lg px-3 py-2.5 text-sm
+           placeholder-gray-500 transition-all duration-200
+           focus:outline-none focus:border-pine-500 focus:ring-1 focus:ring-pine-500/50;
+  }
+
+  .btn-primary {
+    @apply bg-pine-700 hover:bg-pine-600 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed
+           text-white font-medium rounded-lg transition-all duration-150 cursor-pointer;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-800 hover:bg-gray-700 active:scale-95 border border-gray-700
+           text-gray-300 font-medium rounded-lg transition-all duration-150 cursor-pointer;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    background: linear-gradient(90deg, #1f2937 25%, #374151 50%, #1f2937 75%);
+    background-size: 200% 100%;
+    @apply animate-shimmer rounded-lg;
+  }
+}
+
+/* Page transition */
+.page-enter {
+  animation: fadeIn 0.3s ease-out forwards;
 }

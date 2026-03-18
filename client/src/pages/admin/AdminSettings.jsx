@@ -1,96 +1,173 @@
 import { useState, useEffect } from 'react';
+import { useToast } from '../../contexts/ToastContext.jsx';
+import { SkeletonCard } from '../../components/Skeleton.jsx';
 import api from '../../api/client.js';
 
+function Toggle({ value, onChange }) {
+  const on = value === 'true';
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(on ? 'false' : 'true')}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${on ? 'bg-pine-700' : 'bg-gray-700'}`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${on ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  );
+}
+
+function SectionHeader({ title, description }) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-sm font-semibold text-gray-200">{title}</h2>
+      {description && <p className="text-xs text-gray-500 mt-0.5">{description}</p>}
+    </div>
+  );
+}
+
 export default function AdminSettings() {
-  const [settings, setSettings] = useState({ ai_enabled: 'true', company_name: 'Sentinel IT' });
+  const { addToast } = useToast();
+  const [settings, setSettings] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     api.get('/settings').then(r => setSettings(r.data)).finally(() => setLoading(false));
   }, []);
 
+  const set = (key) => (val) => setSettings(s => ({ ...s, [key]: val }));
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
-    setSaved(false);
     try {
       const res = await api.patch('/settings', settings);
       setSettings(res.data);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      addToast('Settings saved', 'success');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save settings');
+      addToast(err.response?.data?.error || 'Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="flex items-center justify-center h-64 text-gray-400">Loading…</div>;
+  if (loading) {
+    return (
+      <div className="max-w-lg space-y-5">
+        <div className="skeleton h-8 w-48" />
+        <SkeletonCard />
+        <SkeletonCard />
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-lg space-y-5">
-      <h1 className="text-2xl font-bold text-gray-900">System Settings</h1>
+    <div className="max-w-lg space-y-5 animate-fadeIn">
+      <h1 className="text-2xl font-bold text-white">System Settings</h1>
 
-      <div className="bg-white rounded-xl border p-6">
-        {saved && (
-          <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-4 py-3 rounded-lg mb-5">
-            ✓ Settings saved successfully
-          </div>
-        )}
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg mb-5">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSave} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Company / System Name</label>
-            <input
-              type="text"
-              value={settings.company_name || ''}
-              onChange={e => setSettings(s => ({ ...s, company_name: e.target.value }))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-pine-700"
-              placeholder="e.g. Acme Corp IT"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">AI Help Desk</label>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setSettings(s => ({ ...s, ai_enabled: s.ai_enabled === 'true' ? 'false' : 'true' }))}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                  settings.ai_enabled === 'true' ? 'bg-pine-900' : 'bg-gray-300'
-                }`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                  settings.ai_enabled === 'true' ? 'translate-x-6' : 'translate-x-1'
-                }`} />
-              </button>
-              <span className="text-sm text-gray-700">
-                {settings.ai_enabled === 'true' ? 'Enabled' : 'Disabled'}
-              </span>
+      <form onSubmit={handleSave} className="space-y-4">
+        {/* General */}
+        <div className="card p-6">
+          <SectionHeader title="General" description="Basic system configuration" />
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Company / System Name</label>
+              <input
+                type="text"
+                value={settings.company_name || ''}
+                onChange={e => set('company_name')(e.target.value)}
+                className="input w-full"
+                placeholder="e.g. Acme Corp IT"
+              />
             </div>
-            <p className="text-xs text-gray-400 mt-1.5">
-              When enabled, employees receive AI-powered troubleshooting steps before a ticket is created.
-            </p>
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full bg-pine-900 hover:bg-pine-800 disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium"
-          >
-            {saving ? 'Saving…' : 'Save Settings'}
-          </button>
-        </form>
-      </div>
+        {/* AI */}
+        <div className="card p-6">
+          <SectionHeader title="AI Help Desk" description="Control the AI troubleshooting feature" />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-gray-300">Enable AI Assistant</p>
+              <p className="text-xs text-gray-600 mt-0.5">Employees receive AI-powered steps before a ticket is created</p>
+            </div>
+            <Toggle value={settings.ai_enabled || 'true'} onChange={set('ai_enabled')} />
+          </div>
+        </div>
+
+        {/* SMTP */}
+        <div className="card p-6">
+          <SectionHeader
+            title="Email / SMTP"
+            description="Configure outbound email for ticket notifications and password resets"
+          />
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1.5">SMTP Host</label>
+                <input
+                  type="text"
+                  value={settings.smtp_host || ''}
+                  onChange={e => set('smtp_host')(e.target.value)}
+                  className="input w-full"
+                  placeholder="smtp.gmail.com"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-400 mb-1.5">Port</label>
+                <input
+                  type="number"
+                  value={settings.smtp_port || '587'}
+                  onChange={e => set('smtp_port')(e.target.value)}
+                  className="input w-full"
+                  placeholder="587"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Username / Email</label>
+              <input
+                type="email"
+                value={settings.smtp_user || ''}
+                onChange={e => set('smtp_user')(e.target.value)}
+                className="input w-full"
+                placeholder="noreply@yourcompany.com"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Password / App Password</label>
+              <input
+                type="password"
+                value={settings.smtp_pass || ''}
+                onChange={e => set('smtp_pass')(e.target.value)}
+                className="input w-full"
+                placeholder="••••••••••••"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">From Address (optional)</label>
+              <input
+                type="email"
+                value={settings.smtp_from || ''}
+                onChange={e => set('smtp_from')(e.target.value)}
+                className="input w-full"
+                placeholder="Sentinel IT <noreply@yourcompany.com>"
+              />
+            </div>
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <p className="text-sm text-gray-300">Use TLS / SSL</p>
+                <p className="text-xs text-gray-600">Enable for port 465</p>
+              </div>
+              <Toggle value={settings.smtp_secure || 'false'} onChange={set('smtp_secure')} />
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" disabled={saving} className="btn-primary w-full py-3 text-sm">
+          {saving ? 'Saving…' : 'Save Settings'}
+        </button>
+      </form>
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import express from 'express';
 import db from '../db/connection.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
+import { sendTicketStatusEmail } from '../services/email.js';
 
 const router = express.Router();
 
-// Get tickets (employees see own, staff/admin see all)
+// List tickets
 router.get('/', authenticate, async (req, res) => {
-  const { status, priority } = req.query;
-
+  const { status, priority, category, search } = req.query;
   let query, params;
 
   if (req.user.role === 'employee') {
@@ -30,14 +30,19 @@ router.get('/', authenticate, async (req, res) => {
     params = [];
   }
 
-  if (status) { query += ' AND t.status = ?'; params.push(status); }
+  if (status)   { query += ' AND t.status = ?';   params.push(status); }
   if (priority) { query += ' AND t.priority = ?'; params.push(priority); }
+  if (category) { query += ' AND t.category = ?'; params.push(category); }
+  if (search)   {
+    query += ' AND (t.title LIKE ? OR u.name LIKE ?)';
+    params.push(`%${search}%`, `%${search}%`);
+  }
   query += ' ORDER BY t.created_at DESC';
 
   res.json(await db.all(query, ...params));
 });
 
-// Get single ticket with comments
+// Get single ticket with comments, notes, attachments
 router.get('/:id', authenticate, async (req, res) => {
   const ticket = await db.get(`
     SELECT t.*, u.name as submitter_name, a.name as assignee_name
@@ -61,21 +66,44 @@ router.get('/:id', authenticate, async (req, res) => {
     ORDER BY tc.created_at ASC
   `, req.params.id);
 
-  res.json({ ...ticket, comments });
+  // Internal notes — only visible to staff/admin
+  let notes = [];
+  if (req.user.role !== 'employee') {
+    notes = await db.all(`
+      SELECT tn.*, u.name as author_name
+      FROM ticket_notes tn
+      JOIN users u ON tn.user_id = u.id
+      WHERE tn.ticket_id = ?
+      ORDER BY tn.created_at ASC
+    `, req.params.id);
+  }
+
+  const attachments = await db.all(
+    'SELECT id, filename, original, size, mimetype, created_at FROM ticket_attachments WHERE ticket_id = ? ORDER BY created_at ASC',
+    req.params.id
+  );
+
+  res.json({ ...ticket, comments, notes, attachments });
 });
 
 // Create ticket
 router.post('/', authenticate, async (req, res) => {
-  const { title, description, priority = 'medium', ai_attempted = false, ai_suggestion = null } = req.body;
+  const {
+    title, description,
+    priority = 'medium',
+    category = 'software',
+    ai_attempted = false,
+    ai_suggestion = null,
+  } = req.body;
 
   if (!title?.trim() || !description?.trim()) {
     return res.status(400).json({ error: 'Title and description are required' });
   }
 
   const result = await db.run(`
-    INSERT INTO tickets (title, description, priority, submitter_id, ai_attempted, ai_suggestion)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `, title.trim(), description.trim(), priority, req.user.id, ai_attempted ? 1 : 0, ai_suggestion);
+    INSERT INTO tickets (title, description, priority, category, submitter_id, ai_attempted, ai_suggestion)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, title.trim(), description.trim(), priority, category, req.user.id, ai_attempted ? 1 : 0, ai_suggestion);
 
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastInsertRowid);
   res.status(201).json(ticket);
@@ -86,17 +114,26 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
-  const { status, priority, assignee_id } = req.body;
+  const { status, priority, category, assignee_id } = req.body;
   const fields = [];
   const values = [];
 
-  if (status !== undefined) { fields.push('status = ?'); values.push(status); }
-  if (priority !== undefined) { fields.push('priority = ?'); values.push(priority); }
+  if (status !== undefined)    { fields.push('status = ?');      values.push(status); }
+  if (priority !== undefined)  { fields.push('priority = ?');    values.push(priority); }
+  if (category !== undefined)  { fields.push('category = ?');    values.push(category); }
   if (assignee_id !== undefined) { fields.push('assignee_id = ?'); values.push(assignee_id || null); }
 
   if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 
   fields.push("updated_at = datetime('now')");
+
+  // Set resolved_at when status moves to resolved
+  if (status === 'resolved' && ticket.status !== 'resolved') {
+    fields.push("resolved_at = datetime('now')");
+  } else if (status && status !== 'resolved') {
+    fields.push('resolved_at = NULL');
+  }
+
   await db.run(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`, ...values, req.params.id);
 
   const updated = await db.get(`
@@ -106,6 +143,20 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
     LEFT JOIN users a ON t.assignee_id = a.id
     WHERE t.id = ?
   `, req.params.id);
+
+  // Send email notification to submitter if status changed
+  if (status && status !== ticket.status) {
+    const submitter = await db.get('SELECT name, email FROM users WHERE id = ?', ticket.submitter_id);
+    if (submitter) {
+      sendTicketStatusEmail({
+        to: submitter.email,
+        name: submitter.name,
+        ticketId: ticket.id,
+        title: ticket.title,
+        newStatus: status,
+      });
+    }
+  }
 
   res.json(updated);
 });
@@ -137,6 +188,29 @@ router.post('/:id/comments', authenticate, async (req, res) => {
   `, result.lastInsertRowid);
 
   res.status(201).json(comment);
+});
+
+// Add internal note (IT staff/admin only)
+router.post('/:id/notes', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
+  const { body } = req.body;
+  if (!body?.trim()) return res.status(400).json({ error: 'Note body required' });
+
+  const ticket = await db.get('SELECT id FROM tickets WHERE id = ?', req.params.id);
+  if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+
+  const result = await db.run(
+    'INSERT INTO ticket_notes (ticket_id, user_id, body) VALUES (?, ?, ?)',
+    req.params.id, req.user.id, body.trim()
+  );
+
+  const note = await db.get(`
+    SELECT tn.*, u.name as author_name
+    FROM ticket_notes tn
+    JOIN users u ON tn.user_id = u.id
+    WHERE tn.id = ?
+  `, result.lastInsertRowid);
+
+  res.status(201).json(note);
 });
 
 export default router;
