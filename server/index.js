@@ -15,10 +15,12 @@ import kbRoutes from './routes/knowledge-base.js';
 import companyProfileRoutes from './routes/company-profile.js';
 import employeeProfileRoutes from './routes/employee-profiles.js';
 import { authenticate } from './middleware/auth.js';
+import { startCronJobs } from './services/cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 await runMigrations();
+startCronJobs();
 
 const app = express();
 const PORT = process.env.PORT || 3001;

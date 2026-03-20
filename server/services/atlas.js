@@ -229,6 +229,136 @@ Be technical and direct. 150-220 words total. No filler.`,
   }
 }
 
+// ── Learning: Extract reusable solution pattern from resolved ticket ───────────
+export async function extractLearnedSolution(ticketId, title, description, solution, category) {
+  if (!await isAIEnabled()) return null;
+  try {
+    const response = await client.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 400,
+      system: ATLAS_IDENTITY,
+      messages: [{
+        role: 'user',
+        content: `Extract a reusable IT solution pattern for a cross-company knowledge base.
+
+Ticket Title: ${title}
+Category: ${category}
+Problem Description: ${description}
+Solution That Worked: ${solution}
+
+Return ONLY a JSON object:
+{
+  "problem_summary": "<10-20 word description generic enough to match future similar tickets>",
+  "problem_keywords": ["<word1>", "<word2>"],
+  "solution_text": "<clear, actionable solution in 1-3 sentences>"
+}
+
+Keywords: 3-8 simple words employees might use (e.g. "vpn", "disconnect", "windows").
+Return ONLY the JSON.`,
+      }],
+    });
+
+    const text = response.content.find(b => b.type === 'text')?.text || '{}';
+    const result = extractJSON(text, '{}');
+    if (!result.problem_summary || !result.solution_text) return null;
+
+    const { lastInsertRowid } = await db.run(
+      `INSERT INTO learned_solutions
+         (category, problem_summary, problem_keywords, solution_text, success_count, tried_count, success_rate, source_ticket_id)
+       VALUES (?, ?, ?, ?, 1, 1, 100, ?)`,
+      category,
+      result.problem_summary,
+      JSON.stringify(result.problem_keywords || []),
+      result.solution_text,
+      ticketId
+    );
+    console.log('[ATLAS] learned solution stored, id:', lastInsertRowid);
+    return lastInsertRowid;
+  } catch (e) {
+    console.error('[ATLAS] extractLearnedSolution error:', e.message);
+    return null;
+  }
+}
+
+// ── Learning: Fetch top relevant solutions for a problem ──────────────────────
+export async function getTopSolutions(problemText, limit = 5) {
+  try {
+    const words = problemText.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length > 3 && !['that', 'this', 'with', 'have', 'from', 'they', 'been', 'when', 'will', 'your', 'what', 'just', 'also'].includes(w));
+
+    const candidates = await db.all(`
+      SELECT id, category, problem_summary, problem_keywords, solution_text,
+             success_count, tried_count, success_rate
+      FROM learned_solutions
+      WHERE tried_count >= 1
+      ORDER BY success_rate DESC, tried_count DESC
+      LIMIT 30
+    `);
+
+    const scored = candidates.map(s => {
+      const kws = JSON.parse(s.problem_keywords || '[]').map(k => k.toLowerCase());
+      const overlap = words.filter(w => kws.some(k => k.includes(w) || w.includes(k))).length;
+      return { ...s, overlap };
+    }).filter(s => s.overlap > 0)
+      .sort((a, b) => b.overlap - a.overlap || b.success_rate - a.success_rate);
+
+    return scored.slice(0, limit);
+  } catch (e) {
+    console.error('[ATLAS] getTopSolutions error:', e.message);
+    return [];
+  }
+}
+
+// ── Learning: Generate weekly intelligence report ─────────────────────────────
+export async function generateWeeklyReport(stats) {
+  if (!await isAIEnabled()) return null;
+  try {
+    const response = await client.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 800,
+      system: `You are ATLAS — the AI backbone of Sentinel IT Helpdesk. You write a concise, professional weekly briefing for IT admins. Tone: confident and data-driven, like a senior engineer who knows what they're talking about. No filler. Pure signal.`,
+      messages: [{
+        role: 'user',
+        content: `Write a weekly IT intelligence briefing from the following data.
+
+WEEK OF: ${stats.weekOf}
+
+TICKET STATS:
+- Tickets created this week: ${stats.ticketsCreated}
+- Tickets resolved this week: ${stats.ticketsResolved}
+- Avg resolution time: ${stats.avgResolutionHours}h
+- ATLAS self-service resolutions (employee resolved without ticket): ${stats.atlasResolved}
+
+TOP CATEGORIES THIS WEEK:
+${stats.topCategories.map(c => `- ${c.category}: ${c.count} tickets`).join('\n') || '- No data'}
+
+TOP PERFORMING LEARNED SOLUTIONS:
+${stats.topSolutions.map(s => `- [${s.category}] "${s.problem_summary}" — ${s.success_count}/${s.tried_count} resolved (${Math.round(s.success_rate)}%)`).join('\n') || '- None yet'}
+
+NEW SOLUTIONS LEARNED THIS WEEK: ${stats.newSolutionsLearned}
+
+SOLUTIONS ATLAS IS STRUGGLING WITH (low success rate, multiple attempts):
+${stats.strugglingAreas.map(s => `- [${s.category}] "${s.problem_summary}" — ${s.success_count}/${s.tried_count} resolved (${Math.round(s.success_rate)}%)`).join('\n') || '- None'}
+
+Write 4 sections:
+1. **This Week at a Glance** — 2-3 sentences hitting the key numbers
+2. **What ATLAS Learned** — what patterns emerged, what's getting smarter
+3. **Watch List** — anything that needs attention (struggling areas, volume spikes)
+4. **Recommendation** — one specific action for the IT team this week
+
+Keep it under 250 words. Make it feel like a real briefing from your AI system, not a robot report.`,
+      }],
+    });
+
+    return response.content.find(b => b.type === 'text')?.text?.trim() || null;
+  } catch (e) {
+    console.error('[ATLAS] generateWeeklyReport error:', e.message);
+    return null;
+  }
+}
+
 // ── Feature 7: Generate knowledge base article from resolved ticket ─────────────
 export async function generateKBArticle(ticket, resolutionReport) {
   if (!await isAIEnabled()) return null;

@@ -131,6 +131,21 @@ export async function runMigrations() {
       created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    `CREATE TABLE IF NOT EXISTS learned_solutions (
+      id               SERIAL PRIMARY KEY,
+      category         TEXT NOT NULL,
+      problem_summary  TEXT NOT NULL,
+      problem_keywords TEXT NOT NULL DEFAULT '[]',
+      solution_text    TEXT NOT NULL,
+      success_count    INTEGER NOT NULL DEFAULT 0,
+      tried_count      INTEGER NOT NULL DEFAULT 0,
+      success_rate     REAL NOT NULL DEFAULT 0,
+      kb_article_id    INTEGER REFERENCES knowledge_base(id) ON DELETE SET NULL,
+      source_ticket_id INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+      last_used_at     TIMESTAMPTZ,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
   ];
 
   for (const sql of tables) {

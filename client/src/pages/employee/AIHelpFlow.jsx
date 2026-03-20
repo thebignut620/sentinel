@@ -61,19 +61,22 @@ export default function AIHelpFlow() {
   const [createdTicketId, setCreatedTicketId] = useState(null);
   const [error, setError] = useState('');
 
+  const reportOutcome = async (resolved) => {
+    const ids = aiResult?.matched_solution_ids;
+    if (ids?.length) {
+      api.post('/ai/solution-outcome', { solution_ids: ids, resolved }).catch(() => {});
+    }
+  };
+
   const handleAskAI = async () => {
     if (!problem.trim()) return;
     setStep(STEPS.THINKING);
     setError('');
     try {
       const res = await api.post('/ai/assist', { problem });
-      console.log('[ATLAS frontend] raw response:', res.data);
-      console.log('[ATLAS frontend] suggestion type:', typeof res.data.suggestion, '| length:', res.data.suggestion?.length ?? 'null');
-      console.log('[ATLAS frontend] suggestion preview:', res.data.suggestion?.slice(0, 150));
       setAiResult(res.data);
       setStep(STEPS.SOLUTION);
     } catch (err) {
-      console.error('[ATLAS frontend] request failed:', err.message, err.response?.data);
       setAiResult({ resolved: false, suggestion: null });
       setError(err.response?.data?.error || 'ATLAS is temporarily offline. You can still submit a ticket below.');
       setStep(STEPS.SOLUTION);
@@ -81,6 +84,7 @@ export default function AIHelpFlow() {
   };
 
   const handleNeedHelp = async () => {
+    reportOutcome(false);
     setTicketForm({ title: '', priority: 'medium', category: 'software' });
     // Fetch KB suggestions before showing ticket form
     setKbLoading(true);
@@ -176,6 +180,21 @@ export default function AIHelpFlow() {
             <div className="flex items-center gap-2 mb-3">
               <div className="h-6 w-6 rounded-full bg-pine-900/60 border border-pine-800/50 flex items-center justify-center text-xs font-bold text-pine-300">A</div>
               <span className="font-semibold text-pine-300">ATLAS Diagnosis</span>
+              {aiResult?.confidence && (
+                <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border
+                  ${aiResult.confidence.level === 'high'
+                    ? 'bg-pine-900/50 text-pine-300 border-pine-700/50'
+                    : aiResult.confidence.level === 'medium'
+                    ? 'bg-blue-900/40 text-blue-300 border-blue-800/50'
+                    : 'bg-gray-800 text-gray-500 border-gray-700'
+                  }`}>
+                  {aiResult.confidence.level === 'high'
+                    ? `✓ ${aiResult.confidence.rate}% success · ${aiResult.confidence.count} verified`
+                    : aiResult.confidence.level === 'medium'
+                    ? `~ ${aiResult.confidence.count} verified cases`
+                    : 'New pattern'}
+                </span>
+              )}
             </div>
 
             {aiResult?.suggestion ? (
@@ -198,7 +217,7 @@ export default function AIHelpFlow() {
             <p className="font-medium text-gray-200 mb-4">Did this solve your problem?</p>
             <div className="flex gap-3">
               <button
-                onClick={() => { addToast('Issue resolved. Logged by ATLAS.', 'success'); navigate('/my-tickets'); }}
+                onClick={() => { reportOutcome(true); addToast('Issue resolved. Logged by ATLAS.', 'success'); navigate('/my-tickets'); }}
                 className="flex-1 bg-pine-800/60 hover:bg-pine-700/60 border border-pine-700/50 text-pine-300 px-4 py-2.5 rounded-lg text-sm font-medium transition-all active:scale-95"
               >
                 ✓ Yes, resolved!

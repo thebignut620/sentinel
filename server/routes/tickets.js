@@ -294,6 +294,22 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
     }
   }
 
+  // ── ATLAS learning: extract solution pattern when a solution is recorded on close
+  const solutionToLearn = solution?.trim() || updated.solution;
+  const isClosing = ['resolved', 'closed'].includes(status) && !['resolved', 'closed'].includes(ticket.status);
+  if (isClosing && solutionToLearn) {
+    setImmediate(async () => {
+      try {
+        await atlas.extractLearnedSolution(
+          ticket.id, ticket.title, ticket.description,
+          solutionToLearn, updated.category || ticket.category
+        );
+      } catch (e) {
+        console.error('[ATLAS] learning extraction error:', e.message);
+      }
+    });
+  }
+
   // ── ATLAS: resolution report + KB article on first resolve/close (features 5 + 7)
   const isFirstClose = ['resolved', 'closed'].includes(status)
     && !['resolved', 'closed'].includes(ticket.status)

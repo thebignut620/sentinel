@@ -1,6 +1,8 @@
 import express from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/connection.js';
+import * as atlas from '../services/atlas.js';
+import { updateSolutionOutcome } from '../services/learning.js';
 
 const router = express.Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -294,6 +296,28 @@ router.post('/assist', async (req, res) => {
     console.error('[ATLAS] employee context error:', e.message);
   }
 
+  // Inject proven learned solutions from the global knowledge base
+  let matchedSolutionIds = [];
+  try {
+    const learnedSolutions = await atlas.getTopSolutions(problem, 5);
+    if (learnedSolutions.length > 0) {
+      matchedSolutionIds = learnedSolutions.map(s => s.id);
+      const solutionLines = learnedSolutions.map(s => {
+        const pct = Math.round(s.success_rate);
+        const count = s.tried_count;
+        let confidence = '';
+        if (count >= 10 && pct >= 70) confidence = `worked for ${s.success_count}/${count} users, ${pct}% success`;
+        else if (count >= 3) confidence = `${s.success_count}/${count} confirmed resolutions`;
+        else confidence = `new pattern, ${count} attempt${count !== 1 ? 's' : ''}`;
+        return `• [${s.category}] ${s.problem_summary}: "${s.solution_text}" (${confidence})`;
+      }).join('\n');
+
+      systemWithContext += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nPROVEN SOLUTIONS FROM REAL TICKETS (global data across all users) — lead with these if they match. Reference the success data naturally: "this usually fixes it", "works for most people with this issue", etc. Do NOT say percentages robotically — weave them in conversationally only if they're high:\n${solutionLines}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+  } catch (e) {
+    console.error('[ATLAS] learned solutions injection error:', e.message);
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-6',
@@ -318,11 +342,60 @@ ${problem}`,
     // A response is considered self-serviceable if ATLAS provided substantive troubleshooting.
     const resolved = suggestion.length > 150;
 
-    res.json({ resolved, suggestion });
+    // Compute confidence from top matched solution
+    let confidence = null;
+    if (matchedSolutionIds.length > 0) {
+      try {
+        const topSol = await db.get(
+          'SELECT tried_count, success_count, success_rate FROM learned_solutions WHERE id = ?',
+          matchedSolutionIds[0]
+        );
+        if (topSol) {
+          const rate = Math.round(topSol.success_rate);
+          if (topSol.tried_count >= 10 && rate >= 70) {
+            confidence = { level: 'high', count: topSol.tried_count, rate };
+          } else if (topSol.tried_count >= 3) {
+            confidence = { level: 'medium', count: topSol.tried_count, rate };
+          } else if (topSol.tried_count >= 1) {
+            confidence = { level: 'low', count: topSol.tried_count, rate };
+          }
+        }
+      } catch {}
+    }
+
+    res.json({ resolved, suggestion, matched_solution_ids: matchedSolutionIds, confidence });
   } catch (err) {
     console.error('[ATLAS] assist error:', err.message);
     console.error('[ATLAS] assist stack:', err.stack);
     res.json({ resolved: false, suggestion: null, error: 'ATLAS is temporarily offline.' });
+  }
+});
+
+// POST /ai/solution-outcome — employee reports whether ATLAS suggestion worked
+router.post('/solution-outcome', async (req, res) => {
+  const { solution_ids, resolved } = req.body;
+  if (!Array.isArray(solution_ids) || solution_ids.length === 0) {
+    return res.json({ ok: true }); // no-op if nothing to update
+  }
+  await updateSolutionOutcome(solution_ids, !!resolved);
+  res.json({ ok: true });
+});
+
+// GET /ai/learning-stats — admin view of learned solutions
+router.get('/learning-stats', async (req, res) => {
+  if (req.user.role === 'employee') return res.status(403).json({ error: 'Access denied' });
+  try {
+    const [total, topByCategory, recent] = await Promise.all([
+      db.get('SELECT COUNT(*) as count, AVG(success_rate) as avg_rate FROM learned_solutions WHERE tried_count >= 1'),
+      db.all(`SELECT category, COUNT(*) as solutions, AVG(success_rate) as avg_rate, SUM(tried_count) as total_tries
+              FROM learned_solutions GROUP BY category ORDER BY total_tries DESC`),
+      db.all(`SELECT category, problem_summary, solution_text, success_count, tried_count, success_rate, last_used_at
+              FROM learned_solutions WHERE tried_count >= 1
+              ORDER BY success_rate DESC, tried_count DESC LIMIT 10`),
+    ]);
+    res.json({ total, topByCategory, recent });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
