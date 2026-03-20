@@ -10,7 +10,7 @@ import SpinnerButton from '../../components/SpinnerButton.jsx';
 import SentimentBadge from '../../components/SentimentBadge.jsx';
 import api from '../../api/client.js';
 
-const SERVER = (api.defaults.baseURL || 'http://localhost:3001/api').replace('/api', '');
+const SERVER = api.defaults.baseURL.replace('/api', '');
 
 const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
 
