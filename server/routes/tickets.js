@@ -6,6 +6,8 @@ import * as atlas from '../services/atlas.js';
 import { detectActionType as detectGoogleAction, getIntegration as getGoogleIntegration } from '../services/googleWorkspace.js';
 import { detectActionType as detectMsAction, getIntegration as getMsIntegration, sendTeamsNotification } from '../services/microsoftGraph.js';
 import { logAudit } from '../middleware/audit.js';
+import { fireWebhooks } from '../services/webhooks.js';
+import { sendNewTicketNotification, sendTicketResolvedNotification } from '../services/slack.js';
 
 // SLA hours per priority
 const SLA_HOURS = { critical: 1, high: 4, medium: 24, low: 72 };
@@ -276,6 +278,17 @@ router.post('/', authenticate, async (req, res) => {
   await logAudit(req, { action: 'ticket.create', entityType: 'ticket', entityId: ticket.id,
     details: { title: ticket.title, priority: finalPriority, category: finalCategory } });
 
+  // Fire webhooks + Slack notifications async (don't block response)
+  setImmediate(async () => {
+    try {
+      const ticketWithUser = { ...ticket, submitter_name: req.user.name };
+      await fireWebhooks('ticket.created', ticketWithUser);
+      await sendNewTicketNotification(ticketWithUser);
+    } catch (e) {
+      console.error('[Phase4] create notifications error:', e.message);
+    }
+  });
+
   res.status(201).json({ ...ticket, assignee_id: finalAssignee });
 });
 
@@ -449,6 +462,21 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
       }
     });
   }
+
+  // Fire webhooks + Slack notifications async
+  setImmediate(async () => {
+    try {
+      const isResolved = status === 'resolved' && ticket.status !== 'resolved';
+      const isClosed   = status === 'closed'   && ticket.status !== 'closed';
+      const webhookEvent = isResolved ? 'ticket.resolved'
+                         : isClosed   ? 'ticket.closed'
+                         : 'ticket.updated';
+      await fireWebhooks(webhookEvent, updated);
+      if (isResolved) await sendTicketResolvedNotification(updated);
+    } catch (e) {
+      console.error('[Phase4] update notifications error:', e.message);
+    }
+  });
 
   res.json(updated);
 });

@@ -247,6 +247,42 @@ export async function runMigrations() {
       permission_key  TEXT NOT NULL,
       PRIMARY KEY (role, permission_key)
     )`,
+    // Phase 4 tables
+    `CREATE TABLE IF NOT EXISTS webhooks (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL,
+      url        TEXT NOT NULL,
+      secret     TEXT NOT NULL DEFAULT '',
+      events     TEXT NOT NULL DEFAULT 'ticket.created,ticket.updated,ticket.resolved,ticket.closed',
+      is_active  INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS api_keys (
+      id             SERIAL PRIMARY KEY,
+      name           TEXT NOT NULL,
+      key_prefix     TEXT NOT NULL,
+      key_hash       TEXT NOT NULL UNIQUE,
+      created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      last_used_at   TIMESTAMPTZ,
+      requests_count INTEGER NOT NULL DEFAULT 0,
+      rate_limit     INTEGER NOT NULL DEFAULT 100,
+      is_active      INTEGER NOT NULL DEFAULT 1,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS api_rate_limits (
+      key_id        INTEGER NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      window_start  TIMESTAMPTZ NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (key_id, window_start)
+    )`,
+    `CREATE TABLE IF NOT EXISTS jira_syncs (
+      id             SERIAL PRIMARY KEY,
+      ticket_id      INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      jira_issue_key TEXT NOT NULL,
+      jira_project   TEXT NOT NULL,
+      pushed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_sync_at   TIMESTAMPTZ
+    )`,
   ];
 
   for (const sql of tables) {
@@ -284,6 +320,22 @@ export async function runMigrations() {
     ['smtp_pass',     ''],
     ['smtp_from',     ''],
     ['smtp_secure',   'false'],
+    // Phase 4 settings
+    ['slack_webhook_url',         ''],
+    ['slack_channel',             ''],
+    ['slack_enabled',             'false'],
+    ['email_ingestion_enabled',   'false'],
+    ['imap_host',                 ''],
+    ['imap_user',                 ''],
+    ['imap_pass',                 ''],
+    ['imap_port',                 '993'],
+    ['pagerduty_routing_key',     ''],
+    ['pagerduty_enabled',         'false'],
+    ['jira_host',                 ''],
+    ['jira_email',                ''],
+    ['jira_token',                ''],
+    ['jira_project',              ''],
+    ['jira_enabled',              'false'],
   ];
   for (const [key, value] of settingSeeds) {
     await db.run(

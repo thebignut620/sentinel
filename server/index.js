@@ -23,6 +23,13 @@ import maintenanceRoutes from './routes/maintenance.js';
 import customFieldRoutes from './routes/custom-fields.js';
 import auditLogRoutes from './routes/audit-log.js';
 import permissionsRoutes from './routes/permissions.js';
+import slackRoutes from './routes/slack.js';
+import emailIngestionRoutes from './routes/email-ingestion.js';
+import webhookRoutes from './routes/webhooks.js';
+import zapierRoutes from './routes/zapier.js';
+import apiKeysRoutes from './routes/api-keys.js';
+import publicApiRoutes from './routes/public-api.js';
+import jiraRoutes from './routes/jira.js';
 import { authenticate } from './middleware/auth.js';
 import { startCronJobs } from './services/cron.js';
 
@@ -62,6 +69,15 @@ app.use('/api/custom-fields', authenticate, customFieldRoutes);
 app.use('/api/audit-log', authenticate, auditLogRoutes);
 app.use('/api/permissions', authenticate, permissionsRoutes);
 app.use('/api', authenticate, uploadRoutes);
+
+// Phase 4 routes
+app.use('/api/slack', slackRoutes);
+app.use('/api/email-ingestion', emailIngestionRoutes);
+app.use('/api/webhooks', webhookRoutes);
+app.use('/api/zapier', zapierRoutes);
+app.use('/api/api-keys', apiKeysRoutes);
+app.use('/v1', publicApiRoutes);
+app.use('/api/jira', jiraRoutes);
 
 // Error handler
 app.use((err, req, res, _next) => {

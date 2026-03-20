@@ -196,6 +196,598 @@ function ActionLog({ actions, loading }) {
   );
 }
 
+// ─── SLACK CARD ───────────────────────────────────────────────────────────────
+
+function SlackCard() {
+  const { addToast } = useToast();
+  const [cfg, setCfg]           = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [channel, setChannel]   = useState('');
+  const [enabled, setEnabled]   = useState(false);
+  const [saving, setSaving]     = useState(false);
+  const [testing, setTesting]   = useState(false);
+
+  useEffect(() => {
+    api.get('/slack')
+      .then(r => {
+        setCfg(r.data);
+        setWebhookUrl(r.data.slack_webhook_url || '');
+        setChannel(r.data.slack_channel || '');
+        setEnabled(r.data.slack_enabled);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/slack', { slack_webhook_url: webhookUrl.trim(), slack_channel: channel.trim(), slack_enabled: enabled });
+      addToast('Slack settings saved', 'success');
+      setCfg(c => ({ ...c, configured: !!webhookUrl.trim(), slack_enabled: enabled }));
+    } catch {
+      addToast('Failed to save Slack settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    try {
+      await api.get('/slack/test');
+      addToast('Test notification sent to Slack!', 'success');
+    } catch (e) {
+      addToast(e.response?.data?.error || 'Test failed', 'error');
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-start gap-4 mb-5">
+        <div className="p-2.5 rounded-xl bg-gray-800 border border-gray-700/50 shrink-0 text-2xl leading-none flex items-center justify-center w-12 h-12">
+          💬
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-base font-semibold text-white">Slack</h2>
+            {!loading && cfg?.configured && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium">
+                {enabled ? 'Active' : 'Configured'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">Post ticket notifications to a Slack channel via an incoming webhook.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="skeleton h-24 rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">Incoming Webhook URL</label>
+            <input
+              className="input w-full text-sm"
+              placeholder="https://hooks.slack.com/services/…"
+              value={webhookUrl}
+              onChange={e => setWebhookUrl(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">Channel (optional display name)</label>
+            <input
+              className="input w-full text-sm"
+              placeholder="#it-alerts"
+              value={channel}
+              onChange={e => setChannel(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="slack-enabled"
+              type="checkbox"
+              className="rounded border-gray-600 bg-gray-800 text-pine-500 focus:ring-pine-500"
+              checked={enabled}
+              onChange={e => setEnabled(e.target.checked)}
+            />
+            <label htmlFor="slack-enabled" className="text-sm text-gray-400">Enable Slack notifications</label>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <button onClick={handleSave} disabled={saving} className="btn-primary px-4 py-2 text-sm">
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            {cfg?.configured && (
+              <button onClick={handleTest} disabled={testing} className="btn-ghost px-4 py-2 text-sm">
+                {testing ? 'Sending…' : 'Send Test'}
+              </button>
+            )}
+          </div>
+          <p className="text-[10px] text-gray-600">Notifications fire on: new ticket, critical ticket, ticket resolved.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── EMAIL INGESTION CARD ─────────────────────────────────────────────────────
+
+function EmailIngestionCard() {
+  const { addToast } = useToast();
+  const [cfg, setCfg]         = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm]       = useState({ imap_host: '', imap_user: '', imap_pass: '', imap_port: '993', email_ingestion_enabled: false });
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    api.get('/email-ingestion/status')
+      .then(r => {
+        setCfg(r.data);
+        setForm(f => ({ ...f, imap_host: r.data.imap_host, imap_user: r.data.imap_user, imap_port: r.data.imap_port, email_ingestion_enabled: r.data.enabled }));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/email-ingestion', form);
+      addToast('IMAP settings saved', 'success');
+      setCfg(c => ({ ...c, configured: !!(form.imap_host && form.imap_user), enabled: form.email_ingestion_enabled }));
+    } catch {
+      addToast('Failed to save IMAP settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-start gap-4 mb-5">
+        <div className="p-2.5 rounded-xl bg-gray-800 border border-gray-700/50 shrink-0 text-2xl leading-none flex items-center justify-center w-12 h-12">
+          📨
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-base font-semibold text-white">Email to Ticket</h2>
+            {!loading && cfg?.configured && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium">
+                {cfg.enabled ? 'Active' : 'Configured'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">Automatically create tickets from emails via IMAP polling. Polled every 2 minutes.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="skeleton h-32 rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          {cfg?.tickets_ingested > 0 && (
+            <div className="bg-pine-900/20 border border-pine-800/30 rounded-lg px-3 py-2">
+              <p className="text-xs text-pine-400">{cfg.tickets_ingested.toLocaleString()} ticket{cfg.tickets_ingested !== 1 ? 's' : ''} ingested from email</p>
+            </div>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">IMAP Host</label>
+              <input className="input w-full text-sm" placeholder="imap.gmail.com" value={form.imap_host} onChange={e => set('imap_host', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Username / Email</label>
+              <input className="input w-full text-sm" placeholder="helpdesk@company.com" value={form.imap_user} onChange={e => set('imap_user', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Port</label>
+              <input className="input w-full text-sm" type="number" value={form.imap_port} onChange={e => set('imap_port', e.target.value)} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Password / App Password</label>
+              <input className="input w-full text-sm" type="password" placeholder="••••••••" value={form.imap_pass} onChange={e => set('imap_pass', e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="imap-enabled"
+              type="checkbox"
+              className="rounded border-gray-600 bg-gray-800 text-pine-500 focus:ring-pine-500"
+              checked={form.email_ingestion_enabled}
+              onChange={e => set('email_ingestion_enabled', e.target.checked)}
+            />
+            <label htmlFor="imap-enabled" className="text-sm text-gray-400">Enable email ingestion</label>
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary px-4 py-2 text-sm">
+            {saving ? 'Saving…' : 'Save IMAP Settings'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── WEBHOOKS CARD ────────────────────────────────────────────────────────────
+
+const ALL_EVENTS = ['ticket.created', 'ticket.updated', 'ticket.resolved', 'ticket.closed'];
+
+function WebhooksCard() {
+  const { addToast } = useToast();
+  const [hooks, setHooks]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm]         = useState({ name: '', url: '', secret: '', events: [...ALL_EVENTS] });
+  const [saving, setSaving]     = useState(false);
+  const [testing, setTesting]   = useState(null);
+  const [deleting, setDeleting] = useState(null);
+
+  useEffect(() => { loadHooks(); }, []);
+
+  const loadHooks = () => {
+    api.get('/webhooks')
+      .then(r => setHooks(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  const handleCreate = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const { data } = await api.post('/webhooks', { ...form, events: form.events.join(',') });
+      setHooks(h => [data, ...h]);
+      setForm({ name: '', url: '', secret: '', events: [...ALL_EVENTS] });
+      setShowForm(false);
+      addToast('Webhook created', 'success');
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed to create webhook', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this webhook?')) return;
+    setDeleting(id);
+    try {
+      await api.delete(`/webhooks/${id}`);
+      setHooks(h => h.filter(x => x.id !== id));
+      addToast('Webhook deleted', 'success');
+    } catch {
+      addToast('Failed to delete webhook', 'error');
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const handleTest = async (id) => {
+    setTesting(id);
+    try {
+      const { data } = await api.post(`/webhooks/${id}/test`);
+      addToast(data.ok ? `Test delivered (HTTP ${data.status})` : `Test failed (HTTP ${data.status})`, data.ok ? 'success' : 'error');
+    } catch (e) {
+      addToast(e.response?.data?.error || 'Test failed', 'error');
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const handleToggleEvent = (evt) => {
+    setForm(f => ({
+      ...f,
+      events: f.events.includes(evt) ? f.events.filter(e => e !== evt) : [...f.events, evt],
+    }));
+  };
+
+  const handleToggleActive = async (hook) => {
+    try {
+      const { data } = await api.patch(`/webhooks/${hook.id}`, { is_active: !hook.is_active });
+      setHooks(h => h.map(x => x.id === hook.id ? { ...x, ...data } : x));
+    } catch {
+      addToast('Failed to update webhook', 'error');
+    }
+  };
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-start gap-4 mb-5">
+        <div className="p-2.5 rounded-xl bg-gray-800 border border-gray-700/50 shrink-0 text-2xl leading-none flex items-center justify-center w-12 h-12">
+          🪝
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-base font-semibold text-white">Custom Webhooks</h2>
+            {hooks.length > 0 && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800 text-gray-400 border border-gray-700 font-medium">
+                {hooks.filter(h => h.is_active).length} active
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">Send signed HMAC-SHA256 payloads to external URLs when ticket events occur.</p>
+        </div>
+        <button
+          onClick={() => setShowForm(s => !s)}
+          className="btn-ghost px-3 py-1.5 text-xs shrink-0"
+        >
+          {showForm ? 'Cancel' : '+ Add'}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleCreate} className="space-y-3 mb-5 bg-gray-800/40 rounded-xl p-4 border border-gray-700/30">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Name</label>
+              <input className="input w-full text-sm" placeholder="My Webhook" required value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">URL</label>
+              <input className="input w-full text-sm" type="url" placeholder="https://…" required value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Secret (for HMAC signature)</label>
+              <input className="input w-full text-sm" placeholder="Optional signing secret" value={form.secret} onChange={e => setForm(f => ({ ...f, secret: e.target.value }))} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">Events</label>
+            <div className="flex flex-wrap gap-2">
+              {ALL_EVENTS.map(evt => (
+                <label key={evt} className="flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="rounded border-gray-600 bg-gray-800 text-pine-500 focus:ring-pine-500"
+                    checked={form.events.includes(evt)}
+                    onChange={() => handleToggleEvent(evt)}
+                  />
+                  <span className="text-xs text-gray-400">{evt}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <button type="submit" disabled={saving} className="btn-primary px-4 py-2 text-sm">
+            {saving ? 'Creating…' : 'Create Webhook'}
+          </button>
+        </form>
+      )}
+
+      {loading ? (
+        <div className="skeleton h-20 rounded-xl" />
+      ) : hooks.length === 0 ? (
+        <p className="text-sm text-gray-600 text-center py-6">No webhooks configured yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {hooks.map(hook => (
+            <div key={hook.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-800/40 border border-gray-700/30">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-gray-300">{hook.name}</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${hook.is_active ? 'bg-pine-900/40 text-pine-300 border-pine-800/40' : 'bg-gray-800 text-gray-500 border-gray-700'}`}>
+                    {hook.is_active ? 'Active' : 'Paused'}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600 truncate mt-0.5">{hook.url}</p>
+                <p className="text-[10px] text-gray-700 mt-0.5">{hook.events}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={() => handleTest(hook.id)} disabled={testing === hook.id} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  {testing === hook.id ? '…' : 'Test'}
+                </button>
+                <button onClick={() => handleToggleActive(hook)} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
+                  {hook.is_active ? 'Pause' : 'Resume'}
+                </button>
+                <button onClick={() => handleDelete(hook.id)} disabled={deleting === hook.id} className="text-xs text-gray-600 hover:text-red-400 transition-colors">
+                  {deleting === hook.id ? '…' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PAGERDUTY CARD ───────────────────────────────────────────────────────────
+
+function PagerDutyCard() {
+  const { addToast } = useToast();
+  const [cfg, setCfg]         = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [routingKey, setRoutingKey] = useState('');
+  const [enabled, setEnabled] = useState(false);
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    api.get('/settings')
+      .then(r => {
+        const map = r.data || {};
+        setRoutingKey(map.pagerduty_routing_key || '');
+        setEnabled(map.pagerduty_enabled === 'true');
+        setCfg({ configured: !!map.pagerduty_routing_key });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/settings', {
+        pagerduty_routing_key: routingKey.trim(),
+        pagerduty_enabled: enabled ? 'true' : 'false',
+      });
+      setCfg({ configured: !!routingKey.trim() });
+      addToast('PagerDuty settings saved', 'success');
+    } catch {
+      addToast('Failed to save PagerDuty settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-start gap-4 mb-5">
+        <div className="p-2.5 rounded-xl bg-gray-800 border border-gray-700/50 shrink-0 text-2xl leading-none flex items-center justify-center w-12 h-12">
+          🚨
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-base font-semibold text-white">PagerDuty</h2>
+            {!loading && cfg?.configured && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium">
+                {enabled ? 'Active' : 'Configured'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">Auto-trigger PagerDuty incidents for critical unassigned tickets older than 15 minutes.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="skeleton h-20 rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-400 mb-1.5">Events API v2 Routing Key</label>
+            <input
+              className="input w-full text-sm font-mono"
+              placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              value={routingKey}
+              onChange={e => setRoutingKey(e.target.value)}
+            />
+            <p className="text-[10px] text-gray-600 mt-1">Found in PagerDuty under Services &gt; Integrations &gt; Events API v2.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="pd-enabled"
+              type="checkbox"
+              className="rounded border-gray-600 bg-gray-800 text-pine-500 focus:ring-pine-500"
+              checked={enabled}
+              onChange={e => setEnabled(e.target.checked)}
+            />
+            <label htmlFor="pd-enabled" className="text-sm text-gray-400">Enable PagerDuty escalation</label>
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary px-4 py-2 text-sm">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── JIRA CARD ────────────────────────────────────────────────────────────────
+
+function JiraCard() {
+  const { addToast } = useToast();
+  const [cfg, setCfg]         = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm]       = useState({ jira_host: '', jira_email: '', jira_token: '', jira_project: '', jira_enabled: false });
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    api.get('/jira/settings')
+      .then(r => {
+        setCfg(r.data);
+        setForm(f => ({
+          ...f,
+          jira_host: r.data.jira_host,
+          jira_email: r.data.jira_email,
+          jira_project: r.data.jira_project,
+          jira_enabled: r.data.jira_enabled,
+        }));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/jira/settings', form);
+      setCfg(c => ({ ...c, jira_enabled: form.jira_enabled, jira_token_configured: c?.jira_token_configured || !!form.jira_token }));
+      addToast('Jira settings saved', 'success');
+    } catch {
+      addToast('Failed to save Jira settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const isConfigured = cfg?.jira_host && cfg?.jira_email && cfg?.jira_token_configured;
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-start gap-4 mb-5">
+        <div className="p-2.5 rounded-xl bg-gray-800 border border-gray-700/50 shrink-0 text-2xl leading-none flex items-center justify-center w-12 h-12">
+          🔷
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="text-base font-semibold text-white">Jira</h2>
+            {!loading && isConfigured && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium">
+                {form.jira_enabled ? 'Active' : 'Configured'}
+              </span>
+            )}
+          </div>
+          <p className="text-sm text-gray-500 mt-0.5">Push Sentinel tickets to Jira and sync status back. Push individual tickets from the ticket detail view.</p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="skeleton h-32 rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Jira Host</label>
+              <input className="input w-full text-sm" placeholder="yourcompany.atlassian.net" value={form.jira_host} onChange={e => set('jira_host', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Project Key</label>
+              <input className="input w-full text-sm" placeholder="IT" value={form.jira_project} onChange={e => set('jira_project', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">Email</label>
+              <input className="input w-full text-sm" placeholder="admin@company.com" value={form.jira_email} onChange={e => set('jira_email', e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                API Token {cfg?.jira_token_configured && <span className="text-pine-500 ml-1">✓ saved</span>}
+              </label>
+              <input className="input w-full text-sm" type="password" placeholder="Leave blank to keep existing" value={form.jira_token} onChange={e => set('jira_token', e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              id="jira-enabled"
+              type="checkbox"
+              className="rounded border-gray-600 bg-gray-800 text-pine-500 focus:ring-pine-500"
+              checked={form.jira_enabled}
+              onChange={e => set('jira_enabled', e.target.checked)}
+            />
+            <label htmlFor="jira-enabled" className="text-sm text-gray-400">Enable Jira integration</label>
+          </div>
+          <button onClick={handleSave} disabled={saving} className="btn-primary px-4 py-2 text-sm">
+            {saving ? 'Saving…' : 'Save Jira Settings'}
+          </button>
+          <p className="text-[10px] text-gray-600">Generate an API token at <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noopener noreferrer" className="text-pine-600 hover:text-pine-400">id.atlassian.com</a>.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Integrations() {
   const { addToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -410,10 +1002,10 @@ export default function Integrations() {
       {/* Placeholder future integrations */}
       <div className="grid grid-cols-2 gap-4">
         {[
-          { name: 'Okta',       icon: '🔐', desc: 'SSO, user lifecycle management' },
-          { name: 'JumpCloud',  icon: '☁',  desc: 'Cloud directory and MDM' },
-          { name: 'Slack',      icon: '💬', desc: 'Ticket notifications and approvals' },
+          { name: 'Okta',         icon: '🔐', desc: 'SSO, user lifecycle management' },
+          { name: 'JumpCloud',    icon: '☁',  desc: 'Cloud directory and MDM' },
           { name: 'Duo Security', icon: '🔒', desc: 'MFA enforcement and monitoring' },
+          { name: 'ServiceNow',   icon: '🛎', desc: 'Enterprise ITSM sync' },
         ].map(({ name, icon, desc }) => (
           <div key={name} className="card p-4 opacity-50">
             <div className="flex items-center gap-2.5 mb-2">
@@ -429,6 +1021,21 @@ export default function Integrations() {
           </div>
         ))}
       </div>
+
+      {/* ─── SLACK ─────────────────────────────────────────────────────────────── */}
+      <SlackCard />
+
+      {/* ─── EMAIL-TO-TICKET ───────────────────────────────────────────────────── */}
+      <EmailIngestionCard />
+
+      {/* ─── WEBHOOKS ──────────────────────────────────────────────────────────── */}
+      <WebhooksCard />
+
+      {/* ─── PAGERDUTY ─────────────────────────────────────────────────────────── */}
+      <PagerDutyCard />
+
+      {/* ─── JIRA ──────────────────────────────────────────────────────────────── */}
+      <JiraCard />
 
       {/* Action log */}
       <div className="card p-6">

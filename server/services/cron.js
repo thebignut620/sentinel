@@ -11,6 +11,8 @@ import * as atlas from './atlas.js';
 import { gatherWeeklyStats } from './learning.js';
 import { sendWeeklyReport } from './email.js';
 import nodemailer from 'nodemailer';
+import { pollEmailInbox } from './emailIngestion.js';
+import { checkCriticalUnassignedTickets } from './pagerduty.js';
 
 async function getTransporter() {
   const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
@@ -152,6 +154,24 @@ export function startCronJobs() {
 
   // Every 10 minutes — maintenance window notifications
   cron.schedule('*/10 * * * *', runMaintenanceNotifications);
+
+  // Every 2 minutes — email ingestion (IMAP polling)
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      await pollEmailInbox();
+    } catch (e) {
+      console.error('[Email Ingestion Cron] failed:', e.message);
+    }
+  });
+
+  // Every 15 minutes — PagerDuty critical ticket check
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      await checkCriticalUnassignedTickets();
+    } catch (e) {
+      console.error('[PagerDuty Cron] failed:', e.message);
+    }
+  });
 
   console.log('✓ ATLAS cron jobs scheduled');
 }

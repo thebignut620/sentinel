@@ -32,6 +32,8 @@ import AuditLog from './pages/admin/AuditLog.jsx';
 import Permissions from './pages/admin/Permissions.jsx';
 import TwoFactorSetup from './pages/admin/TwoFactorSetup.jsx';
 import SsoCallback from './pages/SsoCallback.jsx';
+import ApiKeys from './pages/admin/ApiKeys.jsx';
+import ApiDocs from './pages/ApiDocs.jsx';
 import api from './api/client.js';
 
 function RootRedirect() {
@@ -113,6 +115,7 @@ function AppInner() {
         <Route path="/login" element={<Login />} />
         <Route path="/sso-callback" element={<SsoCallback />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/api-docs" element={<ApiDocs />} />
 
         {/* Onboarding wizard — full screen, no sidebar */}
         <Route
@@ -234,6 +237,14 @@ function AppInner() {
             }
           />
           <Route path="settings/2fa" element={<TwoFactorSetup />} />
+          <Route
+            path="admin/api-keys"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <ApiKeys />
+              </ProtectedRoute>
+            }
+          />
         </Route>
 
         <Route path="*" element={<NotFound />} />
