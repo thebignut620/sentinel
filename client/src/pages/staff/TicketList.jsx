@@ -6,6 +6,7 @@ import { SkeletonTable } from '../../components/Skeleton.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import SearchInput from '../../components/SearchInput.jsx';
 import SentimentBadge from '../../components/SentimentBadge.jsx';
+import SlaTimer from '../../components/SlaTimer.jsx';
 import sentinelLogo from '../../assets/sentinel_logo.png';
 import api from '../../api/client.js';
 
@@ -126,10 +127,12 @@ function KanbanCard({ ticket, staffUsers, onUpdate, selected, onToggleSelect, bu
 
         {/* Footer row */}
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span className="text-[10px] text-gray-600 truncate">{ticket.submitter_name}</span>
             <span className="text-gray-700">·</span>
             <OpenAge createdAt={ticket.created_at} />
+            <SlaTimer sla_due_at={ticket.sla_due_at} priority={ticket.priority}
+              is_escalated={ticket.is_escalated} status={ticket.status} compact />
           </div>
           {/* Assignee avatar */}
           <div className="relative shrink-0">
@@ -363,10 +366,10 @@ export default function TicketList() {
     }
   }, [staffUsers, addToast, load]);
 
-  const handleBulkAction = async (status) => {
+  const handleBulkAction = async (payload) => {
     const ids = [...selectedIds];
     try {
-      await api.patch('/tickets/bulk', { ids, status });
+      await api.patch('/tickets/bulk', { ids, ...payload });
       addToast(`${ids.length} tickets updated`, 'success');
       setSelected(new Set());
       load();
@@ -443,16 +446,29 @@ export default function TicketList() {
 
       {/* Bulk action bar */}
       {bulkMode && selectedIds.size > 0 && (
-        <div className="card p-3 flex items-center gap-3 border-pine-800/50 animate-fadeIn">
-          <span className="text-xs text-gray-300">{selectedIds.size} selected</span>
-          <div className="flex gap-2">
+        <div className="card p-3 flex flex-wrap items-center gap-3 border-pine-800/50 animate-fadeIn">
+          <span className="text-sm font-medium text-pine-300 shrink-0">{selectedIds.size} selected</span>
+          <div className="flex flex-wrap gap-2 items-center flex-1">
+            <span className="text-xs text-gray-500">Status:</span>
             {['open','in_progress','resolved','closed'].map(s => (
-              <button key={s} onClick={() => handleBulkAction(s)}
+              <button key={s} onClick={() => handleBulkAction({ status: s })}
                 className="btn-secondary px-3 py-1.5 text-xs capitalize">{s.replace('_',' ')}</button>
             ))}
+            <span className="text-xs text-gray-500 ml-2">Priority:</span>
+            {['critical','high','medium','low'].map(p => (
+              <button key={p} onClick={() => handleBulkAction({ priority: p })}
+                className="btn-secondary px-3 py-1.5 text-xs capitalize">{p}</button>
+            ))}
+            <span className="text-xs text-gray-500 ml-2">Assign:</span>
+            <select className="input text-xs py-1" defaultValue=""
+              onChange={e => { if (e.target.value !== '') handleBulkAction({ assignee_id: e.target.value || null }); e.target.value = ''; }}>
+              <option value="">— pick assignee</option>
+              <option value="">Unassign</option>
+              {staffUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
           </div>
-          <button onClick={() => { setSelected(new Set()); setBulkMode(false); }} className="ml-auto text-xs text-gray-600 hover:text-gray-300">
-            Clear
+          <button onClick={() => { setSelected(new Set()); setBulkMode(false); }} className="text-xs text-gray-600 hover:text-gray-300 shrink-0">
+            ✕ Clear
           </button>
         </div>
       )}

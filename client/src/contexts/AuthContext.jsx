@@ -19,12 +19,20 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const login = async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
+  const login = async (email, password, totp_code) => {
+    const res = await api.post('/auth/login', { email, password, totp_code });
+    // 2FA required — not yet logged in
+    if (res.data.requires_2fa) return { requires_2fa: true };
     localStorage.setItem('sentinel_token', res.data.token);
     const isNew = !localStorage.getItem('sentinel_welcomed');
     setUser({ ...res.data.user, _isNew: isNew });
     return { ...res.data.user, _isNew: isNew };
+  };
+
+  const loginWithToken = (token) => {
+    localStorage.setItem('sentinel_token', token);
+    // Fetch user data immediately
+    api.get('/auth/me').then(res => setUser(res.data)).catch(() => {});
   };
 
   const logout = () => {
@@ -33,7 +41,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   );

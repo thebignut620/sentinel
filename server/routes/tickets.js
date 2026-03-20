@@ -5,6 +5,15 @@ import { sendTicketStatusEmail } from '../services/email.js';
 import * as atlas from '../services/atlas.js';
 import { detectActionType as detectGoogleAction, getIntegration as getGoogleIntegration } from '../services/googleWorkspace.js';
 import { detectActionType as detectMsAction, getIntegration as getMsIntegration, sendTeamsNotification } from '../services/microsoftGraph.js';
+import { logAudit } from '../middleware/audit.js';
+
+// SLA hours per priority
+const SLA_HOURS = { critical: 1, high: 4, medium: 24, low: 72 };
+
+function calcSlaDueAt(priority) {
+  const hours = SLA_HOURS[priority] ?? 24;
+  return new Date(Date.now() + hours * 3_600_000).toISOString();
+}
 
 const router = express.Router();
 
@@ -153,6 +162,7 @@ router.post('/', authenticate, async (req, res) => {
     category: clientCategory = 'software',
     ai_attempted = false,
     ai_suggestion = null,
+    custom_fields: customFields = null,
   } = req.body;
 
   if (!title?.trim() || !description?.trim()) {
@@ -170,20 +180,23 @@ router.post('/', authenticate, async (req, res) => {
   const finalSentiment = analysis?.sentiment ?? null;
   const finalAssignee  = assigneeId ?? null;
 
+  const slaDueAt = calcSlaDueAt(finalPriority);
+
   const result = await db.run(`
     INSERT INTO tickets
       (title, description, priority, category, submitter_id, assignee_id,
-       ai_attempted, ai_suggestion, sentiment, ai_auto_assigned)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ai_attempted, ai_suggestion, sentiment, ai_auto_assigned, sla_due_at, custom_fields)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     title.trim(), description.trim(),
     finalPriority, finalCategory,
     req.user.id, finalAssignee,
     ai_attempted ? 1 : 0, ai_suggestion,
-    finalSentiment, finalAssignee ? 1 : 0
+    finalSentiment, finalAssignee ? 1 : 0,
+    slaDueAt, customFields ? JSON.stringify(customFields) : null
   );
 
-  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastInsertRowid);
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastID ?? result.lastInsertRowid);
 
   // Log creation
   await logHistory(ticket.id, req.user.id, 'created', null, 'open');
@@ -260,16 +273,19 @@ router.post('/', authenticate, async (req, res) => {
     });
   }
 
+  await logAudit(req, { action: 'ticket.create', entityType: 'ticket', entityId: ticket.id,
+    details: { title: ticket.title, priority: finalPriority, category: finalCategory } });
+
   res.status(201).json({ ...ticket, assignee_id: finalAssignee });
 });
 
 // Bulk update tickets (staff/admin only)
 router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
-  const { ids, status, assignee_id } = req.body;
+  const { ids, status, assignee_id, priority } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids array required' });
   }
-  if (!status && assignee_id === undefined) {
+  if (!status && assignee_id === undefined && !priority) {
     return res.status(400).json({ error: 'Nothing to update' });
   }
 
@@ -293,11 +309,25 @@ router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req
     }
     if (assignee_id !== undefined) {
       fields.push('assignee_id = ?'); values.push(assignee_id || null);
+      const assigneeName = assignee_id
+        ? (await db.get('SELECT name FROM users WHERE id = ?', assignee_id))?.name
+        : null;
+      await logHistory(id, req.user.id, 'assigned', null, assigneeName || 'Unassigned');
+    }
+    if (priority) {
+      fields.push('priority = ?'); values.push(priority);
+      // Recalculate SLA if priority changes
+      fields.push('sla_due_at = ?'); values.push(calcSlaDueAt(priority));
+      fields.push('is_escalated = 0');
+      if (priority !== ticket.priority) {
+        await logHistory(id, req.user.id, 'priority', ticket.priority, priority);
+      }
     }
 
     await db.run(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`, ...values, id);
   }
 
+  await logAudit(req, { action: 'ticket.bulk_update', details: { ids, status, assignee_id, priority } });
   res.json({ ok: true, updated: ids.length });
 });
 

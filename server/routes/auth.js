@@ -2,6 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import speakeasy from 'speakeasy';
 import db from '../db/connection.js';
 import { authenticate } from '../middleware/auth.js';
 import { sendPasswordResetEmail } from '../services/email.js';
@@ -9,7 +10,7 @@ import { sendPasswordResetEmail } from '../services/email.js';
 const router = express.Router();
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, totp_code } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' });
   }
@@ -17,6 +18,21 @@ router.post('/login', async (req, res) => {
   const user = await db.get('SELECT * FROM users WHERE email = ? AND is_active = 1', email);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Invalid email or password' });
+  }
+
+  // If 2FA is enabled, require TOTP code
+  if (user.totp_enabled) {
+    if (!totp_code) {
+      // Signal to the client that 2FA is required
+      return res.status(200).json({ requires_2fa: true });
+    }
+    const valid = speakeasy.totp.verify({
+      secret: user.totp_secret,
+      encoding: 'base32',
+      token: String(totp_code),
+      window: 1,
+    });
+    if (!valid) return res.status(401).json({ error: 'Invalid authenticator code' });
   }
 
   const token = jwt.sign(

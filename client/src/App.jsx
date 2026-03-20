@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from './components/Layout.jsx';
 import AppLoader from './components/AppLoader.jsx';
 import OfflineBanner from './components/OfflineBanner.jsx';
+import MaintenanceBanner from './components/MaintenanceBanner.jsx';
 import NavProgress from './components/NavProgress.jsx';
 import WelcomeModal from './components/WelcomeModal.jsx';
 import Login from './pages/Login.jsx';
@@ -23,6 +24,14 @@ import AdminSettings from './pages/admin/AdminSettings.jsx';
 import OnboardingWizard from './pages/admin/OnboardingWizard.jsx';
 import CompanyProfile from './pages/admin/CompanyProfile.jsx';
 import Integrations from './pages/admin/Integrations.jsx';
+import Departments from './pages/admin/Departments.jsx';
+import Assets from './pages/admin/Assets.jsx';
+import Maintenance from './pages/admin/Maintenance.jsx';
+import CustomFields from './pages/admin/CustomFields.jsx';
+import AuditLog from './pages/admin/AuditLog.jsx';
+import Permissions from './pages/admin/Permissions.jsx';
+import TwoFactorSetup from './pages/admin/TwoFactorSetup.jsx';
+import SsoCallback from './pages/SsoCallback.jsx';
 import api from './api/client.js';
 
 function RootRedirect() {
@@ -95,12 +104,14 @@ function AppInner() {
 
   return (
     <>
+      <MaintenanceBanner />
       <OfflineBanner />
       <NavProgress />
       <WelcomeGate />
       <OnboardingGate />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/sso-callback" element={<SsoCallback />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* Onboarding wizard — full screen, no sidebar */}
@@ -174,6 +185,55 @@ function AppInner() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="admin/departments"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <Departments />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/assets"
+            element={
+              <ProtectedRoute roles={['it_staff', 'admin']}>
+                <Assets />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/maintenance"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <Maintenance />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/custom-fields"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <CustomFields />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/audit-log"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <AuditLog />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/permissions"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <Permissions />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="settings/2fa" element={<TwoFactorSetup />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

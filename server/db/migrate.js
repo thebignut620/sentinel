@@ -173,6 +173,80 @@ export async function runMigrations() {
       result        TEXT,
       error_message TEXT
     )`,
+    // Phase 3 tables
+    `CREATE TABLE IF NOT EXISTS departments (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL UNIQUE,
+      description TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS assets (
+      id               SERIAL PRIMARY KEY,
+      name             TEXT NOT NULL,
+      asset_type       TEXT NOT NULL CHECK(asset_type IN ('laptop','desktop','monitor','phone','printer','tablet','server','other')),
+      serial_number    TEXT UNIQUE,
+      manufacturer     TEXT,
+      model            TEXT,
+      purchase_date    DATE,
+      warranty_expiry  DATE,
+      assigned_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      status           TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','retired','in_repair','storage')),
+      notes            TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS asset_maintenance (
+      id          SERIAL PRIMARY KEY,
+      asset_id    INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      performed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      description TEXT NOT NULL,
+      cost        NUMERIC(10,2),
+      performed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_assets (
+      ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      asset_id  INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      PRIMARY KEY (ticket_id, asset_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS maintenance_windows (
+      id           SERIAL PRIMARY KEY,
+      title        TEXT NOT NULL,
+      description  TEXT,
+      starts_at    TIMESTAMPTZ NOT NULL,
+      ends_at      TIMESTAMPTZ NOT NULL,
+      notify_users INTEGER NOT NULL DEFAULT 1,
+      notified_at  TIMESTAMPTZ,
+      created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS custom_fields (
+      id          SERIAL PRIMARY KEY,
+      category    TEXT NOT NULL,
+      field_name  TEXT NOT NULL,
+      field_label TEXT NOT NULL,
+      field_type  TEXT NOT NULL DEFAULT 'text' CHECK(field_type IN ('text','textarea','select','number')),
+      options     TEXT,
+      required    INTEGER NOT NULL DEFAULT 0,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS audit_log (
+      id          SERIAL PRIMARY KEY,
+      user_id     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      user_name   TEXT,
+      user_role   TEXT,
+      action      TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id   INTEGER,
+      details     TEXT,
+      ip_address  TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS role_permissions (
+      role            TEXT NOT NULL,
+      permission_key  TEXT NOT NULL,
+      PRIMARY KEY (role, permission_key)
+    )`,
   ];
 
   for (const sql of tables) {
@@ -189,6 +263,16 @@ export async function runMigrations() {
   await addColumnIfMissing('tickets', 'solution',           'TEXT');
   await addColumnIfMissing('atlas_actions', 'provider',     "TEXT DEFAULT 'google'");
   await addColumnIfMissing('integrations',  'metadata',     'TEXT');
+  // Phase 3 columns
+  await addColumnIfMissing('users',    'totp_secret',       'TEXT');
+  await addColumnIfMissing('users',    'totp_enabled',      'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('users',    'sso_provider',      'TEXT');
+  await addColumnIfMissing('users',    'sso_id',            'TEXT');
+  await addColumnIfMissing('users',    'department_id',     'INTEGER');
+  await addColumnIfMissing('tickets',  'sla_due_at',        'TIMESTAMPTZ');
+  await addColumnIfMissing('tickets',  'is_escalated',      'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('tickets',  'department_id',     'INTEGER');
+  await addColumnIfMissing('tickets',  'custom_fields',     'TEXT');
 
   // Seed default settings
   const settingSeeds = [
@@ -205,6 +289,34 @@ export async function runMigrations() {
     await db.run(
       'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING',
       key, value
+    );
+  }
+
+  // Seed default role permissions
+  const defaultPermissions = [
+    // admin gets everything
+    ['admin', 'close_tickets'],
+    ['admin', 'see_internal_notes'],
+    ['admin', 'access_kb'],
+    ['admin', 'export_data'],
+    ['admin', 'manage_users'],
+    ['admin', 'manage_assets'],
+    ['admin', 'view_audit_log'],
+    ['admin', 'manage_departments'],
+    ['admin', 'manage_custom_fields'],
+    ['admin', 'manage_permissions'],
+    // it_staff
+    ['it_staff', 'close_tickets'],
+    ['it_staff', 'see_internal_notes'],
+    ['it_staff', 'access_kb'],
+    ['it_staff', 'manage_assets'],
+    // employee
+    ['employee', 'access_kb'],
+  ];
+  for (const [role, permission_key] of defaultPermissions) {
+    await db.run(
+      'INSERT INTO role_permissions (role, permission_key) VALUES (?, ?) ON CONFLICT DO NOTHING',
+      role, permission_key
     );
   }
 
