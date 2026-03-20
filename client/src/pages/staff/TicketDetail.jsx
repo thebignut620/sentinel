@@ -85,14 +85,22 @@ function AtlasActionCard({ action, onApprove, onDeny, loading }) {
       {(!needsDriveId || hasDriveId) && (
         <div className="flex gap-2 pt-1">
           <button
-            onClick={() => onApprove(action.id)}
+            type="button"
+            onClick={() => {
+              console.log('[AtlasActionCard] approve clicked — action.id:', action.id, 'type:', action.action_type, 'loading:', loading);
+              onApprove(action.id);
+            }}
             disabled={loading}
             className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-pine-800/60 border border-pine-700/50 text-pine-200 hover:bg-pine-700/60 transition-colors disabled:opacity-50"
           >
             ✓ Approve & Execute
           </button>
           <button
-            onClick={() => onDeny(action.id)}
+            type="button"
+            onClick={() => {
+              console.log('[AtlasActionCard] deny clicked — action.id:', action.id);
+              onDeny(action.id);
+            }}
             disabled={loading}
             className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-gray-800 border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-50"
           >
@@ -507,12 +515,21 @@ export default function TicketDetail() {
   };
 
   const handleApproveAction = async (actionId, alreadySavedDriveId = false) => {
+    console.log('[handleApproveAction] called — actionId:', actionId, typeof actionId);
+    if (!actionId) {
+      console.error('[handleApproveAction] actionId is undefined/null — aborting');
+      return;
+    }
+    const url = `/integrations/actions/${actionId}/approve`;
+    console.log('[handleApproveAction] POSTing to:', url, '| baseURL:', api.defaults.baseURL);
     setActionLoading(true);
     try {
-      await api.post(`/integrations/actions/${actionId}/approve`);
+      const res = await api.post(url);
+      console.log('[handleApproveAction] response:', res.status, res.data);
       addToast('ATLAS action executed successfully', 'success');
       await loadAll();
     } catch (err) {
+      console.error('[handleApproveAction] error:', err.response?.status, err.response?.data, err.message);
       addToast(err.response?.data?.error || 'Action failed', 'error');
     } finally {
       setActionLoading(false);

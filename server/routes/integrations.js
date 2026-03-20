@@ -99,21 +99,27 @@ router.patch('/actions/:id', authenticate, requireRole('it_staff', 'admin'), asy
 
 // Approve + execute
 router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
-  const action = await db.get('SELECT * FROM atlas_actions WHERE id = ?', req.params.id);
-  if (!action)                    return res.status(404).json({ error: 'Action not found' });
-  if (action.status !== 'pending') return res.status(409).json({ error: 'Action already handled' });
-
-  await db.run(
-    'UPDATE atlas_actions SET status = ?, approved_by = ?, approved_at = NOW() WHERE id = ?',
-    'approved', req.user.id, action.id,
-  );
-
+  console.log('[approve] ▶ handler reached — user:', req.user?.id, 'role:', req.user?.role, 'action id:', req.params.id);
+  let action = null;
   try {
+    action = await db.get('SELECT * FROM atlas_actions WHERE id = ?', req.params.id);
+    console.log('[approve] action fetched:', action ? `type=${action.action_type} status=${action.status}` : 'NOT FOUND');
+
+    if (!action)                     return res.status(404).json({ error: 'Action not found' });
+    if (action.status !== 'pending') return res.status(409).json({ error: 'Action already handled' });
+
+    await db.run(
+      'UPDATE atlas_actions SET status = ?, approved_by = ?, approved_at = NOW() WHERE id = ?',
+      'approved', req.user.id, action.id,
+    );
+    console.log('[approve] marked approved, executing action_type:', action.action_type);
+
     let result = '';
     const { action_type, target_email, ticket_id } = action;
     const details = JSON.parse(action.details || '{}');
 
     if (action_type === 'password_reset') {
+      console.log('[approve] calling gws.resetPassword for:', target_email);
       const { tempPassword } = await gws.resetPassword(target_email);
       const submitter = await db.get(
         'SELECT name, email FROM users WHERE id = (SELECT submitter_id FROM tickets WHERE id = ?)',
@@ -139,6 +145,7 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
       );
 
     } else if (action_type === 'account_unlock') {
+      console.log('[approve] calling gws.unlockAccount for:', target_email);
       await gws.unlockAccount(target_email);
       result = `Account unsuspended for ${target_email}.`;
       await db.run(
@@ -155,6 +162,7 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
       if (!details.drive_id) {
         return res.status(400).json({ error: 'Drive folder ID is required before approving an access grant' });
       }
+      console.log('[approve] calling gws.grantDriveAccess:', details.drive_id, target_email);
       await gws.grantDriveAccess(details.drive_id, target_email, details.role || 'reader');
       const roleLabel = details.role || 'reader';
       result = `Drive access granted: ${target_email} → ${details.drive_id} (${roleLabel}).`;
@@ -173,13 +181,18 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
       'UPDATE atlas_actions SET status = ?, executed_at = NOW(), result = ? WHERE id = ?',
       'executed', result, action.id,
     );
+    console.log('[approve] ✓ complete — result:', result);
     res.json({ ok: true, result });
 
   } catch (err) {
-    await db.run(
-      'UPDATE atlas_actions SET status = ?, error_message = ? WHERE id = ?',
-      'failed', err.message, action.id,
-    );
+    console.error('[approve] ✗ ERROR:', err.message);
+    console.error('[approve] stack:', err.stack);
+    if (action?.id) {
+      await db.run(
+        'UPDATE atlas_actions SET status = ?, error_message = ? WHERE id = ?',
+        'failed', err.message, action.id,
+      ).catch(() => {});
+    }
     res.status(500).json({ error: err.message });
   }
 });
