@@ -97,6 +97,29 @@ export async function runMigrations() {
       created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    `CREATE TABLE IF NOT EXISTS company_profile (
+      id               SERIAL PRIMARY KEY,
+      company_name     TEXT,
+      industry         TEXT,
+      employee_count   TEXT,
+      it_staff_count   TEXT,
+      os_types         TEXT,
+      email_platform   TEXT,
+      comm_tools       TEXT,
+      other_software   TEXT,
+      common_issues    TEXT,
+      recurring_issues TEXT,
+      problem_systems  TEXT,
+      has_vpn          INTEGER NOT NULL DEFAULT 0,
+      network_equipment TEXT,
+      infrastructure   TEXT,
+      compliance_reqs  TEXT,
+      atlas_style      TEXT NOT NULL DEFAULT 'balanced',
+      atlas_clarify    INTEGER NOT NULL DEFAULT 1,
+      completed        INTEGER NOT NULL DEFAULT 0,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
   ];
 
   for (const sql of tables) {

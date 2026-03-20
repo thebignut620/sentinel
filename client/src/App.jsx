@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
@@ -19,9 +19,11 @@ import TicketList from './pages/staff/TicketList.jsx';
 import TicketDetail from './pages/staff/TicketDetail.jsx';
 import UserManagement from './pages/admin/UserManagement.jsx';
 import AdminSettings from './pages/admin/AdminSettings.jsx';
+import OnboardingWizard from './pages/admin/OnboardingWizard.jsx';
+import CompanyProfile from './pages/admin/CompanyProfile.jsx';
+import api from './api/client.js';
 
 function RootRedirect() {
-  const { user } = useAuth();
   return <Navigate to="/dashboard" replace />;
 }
 
@@ -62,6 +64,29 @@ function WelcomeGate() {
   return <WelcomeModal onClose={dismiss} />;
 }
 
+// Redirects first-time admins to the onboarding wizard
+function OnboardingGate() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    if (pathname === '/onboarding') return;
+    if (localStorage.getItem('sentinel_onboarding_done')) return;
+
+    api.get('/company-profile').then(r => {
+      if (!r.data) {
+        navigate('/onboarding', { replace: true });
+      } else {
+        localStorage.setItem('sentinel_onboarding_done', '1');
+      }
+    }).catch(() => {});
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return null;
+}
+
 function AppInner() {
   const { loading } = useAuth();
   if (loading) return <AppLoader />;
@@ -71,9 +96,20 @@ function AppInner() {
       <OfflineBanner />
       <NavProgress />
       <WelcomeGate />
+      <OnboardingGate />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
+
+        {/* Onboarding wizard — full screen, no sidebar */}
+        <Route
+          path="/onboarding"
+          element={
+            <ProtectedRoute roles={['admin']}>
+              <OnboardingWizard />
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/"
@@ -108,6 +144,14 @@ function AppInner() {
             element={
               <ProtectedRoute roles={['admin']}>
                 <UserManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/company-profile"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <CompanyProfile />
               </ProtectedRoute>
             }
           />

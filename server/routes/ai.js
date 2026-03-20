@@ -197,11 +197,55 @@ router.post('/assist', async (req, res) => {
     return res.json({ resolved: false, suggestion: null, aiDisabled: true });
   }
 
+  // Build company context block to inject into ATLAS system prompt
+  let systemWithContext = ATLAS_SYSTEM;
+  try {
+    const profile = await db.get('SELECT * FROM company_profile WHERE completed = 1 LIMIT 1');
+    if (profile) {
+      const osTypes       = JSON.parse(profile.os_types       || '[]');
+      const commTools     = JSON.parse(profile.comm_tools     || '[]');
+      const commonIssues  = JSON.parse(profile.common_issues  || '[]');
+      const complianceReqs = JSON.parse(profile.compliance_reqs || '[]');
+
+      const ctx = [];
+      if (profile.company_name) ctx.push(`Company: ${profile.company_name}${profile.industry ? ` (${profile.industry})` : ''}`);
+      if (profile.employee_count) ctx.push(`Size: ${profile.employee_count} employees, ${profile.it_staff_count || 'unknown number of'} IT staff`);
+      if (osTypes.length) ctx.push(`OS environment: ${osTypes.join(' + ')} — default to ${osTypes.includes('Windows') ? 'Windows' : osTypes[0]} instructions; note differences for other platforms in use`);
+      if (profile.email_platform) ctx.push(`Email platform: ${profile.email_platform} — always give ${profile.email_platform}-specific solutions for email issues`);
+      if (commTools.length) ctx.push(`Communication tools: ${commTools.join(', ')}`);
+      if (profile.other_software) ctx.push(`Other key software: ${profile.other_software}`);
+      if (profile.has_vpn) ctx.push('Has VPN: Yes — always consider VPN connectivity as a possible cause for any network or remote access issue');
+      if (profile.network_equipment) ctx.push(`Network equipment: ${profile.network_equipment}`);
+      if (profile.infrastructure) ctx.push(`Infrastructure: ${profile.infrastructure}`);
+      if (complianceReqs.length) ctx.push(`Compliance requirements: ${complianceReqs.join(', ')} — flag any advice that could conflict with these`);
+      if (commonIssues.filter(Boolean).length) ctx.push(`Known common issues at this company: ${commonIssues.filter(Boolean).join('; ')}`);
+      if (profile.recurring_issues) ctx.push(`Recurring problems: ${profile.recurring_issues}`);
+      if (profile.problem_systems) ctx.push(`Systems that frequently cause problems here: ${profile.problem_systems}`);
+
+      if (ctx.length) {
+        let contextBlock = `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCOMPANY CONTEXT — you have been their IT person for years. Use this naturally, not robotically. Reference it when it's relevant:\n${ctx.map(l => `• ${l}`).join('\n')}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+        if (profile.atlas_style === 'brief') {
+          contextBlock += '\n\nThis team prefers brief responses. Keep it even shorter than your default — one or two lines when possible.';
+        } else if (profile.atlas_style === 'detailed') {
+          contextBlock += '\n\nThis team prefers detailed explanations. Go deeper than your default — explain the why behind each step.';
+        }
+        if (!profile.atlas_clarify) {
+          contextBlock += '\nSkip clarifying questions — this team wants the answer immediately. Use the company context above to make your best call.';
+        }
+
+        systemWithContext = ATLAS_SYSTEM + contextBlock;
+      }
+    }
+  } catch (e) {
+    console.error('[ATLAS] company profile context error:', e.message);
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-6',
       max_tokens: 3500,
-      system: ATLAS_SYSTEM,
+      system: systemWithContext,
       messages: [{
         role: 'user',
         content: `An employee has submitted the following IT issue. You MUST provide at least 3 ranked troubleshooting approaches with step-by-step instructions and explanations. Do not suggest contacting IT or submitting a ticket until after you have provided your full set of approaches. Only ask clarifying questions if the description is genuinely too ambiguous to diagnose — and even then, always include the most likely fix to try immediately.
