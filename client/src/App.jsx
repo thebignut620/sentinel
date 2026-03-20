@@ -15,6 +15,7 @@ import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import AIHelpFlow from './pages/employee/AIHelpFlow.jsx';
 import MyTickets from './pages/employee/MyTickets.jsx';
+import MyProfile from './pages/employee/MyProfile.jsx';
 import TicketList from './pages/staff/TicketList.jsx';
 import TicketDetail from './pages/staff/TicketDetail.jsx';
 import UserManagement from './pages/admin/UserManagement.jsx';
@@ -125,6 +126,7 @@ function AppInner() {
           {/* Employee */}
           <Route path="help" element={<AIHelpFlow />} />
           <Route path="my-tickets" element={<MyTickets />} />
+          <Route path="my-profile" element={<MyProfile />} />
           <Route path="knowledge-base" element={<KnowledgeBase />} />
 
           {/* Staff + Admin */}

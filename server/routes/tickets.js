@@ -29,7 +29,9 @@ router.get('/', authenticate, async (req, res) => {
     params = [req.user.id];
   } else {
     query = `
-      SELECT t.*, u.name as submitter_name, a.name as assignee_name
+      SELECT t.*, u.name as submitter_name, a.name as assignee_name,
+        (SELECT COUNT(*) FROM tickets t2
+         WHERE t2.submitter_id = t.submitter_id AND t2.category = t.category) as category_ticket_count
       FROM tickets t
       JOIN users u ON t.submitter_id = u.id
       LEFT JOIN users a ON t.assignee_id = a.id
@@ -238,7 +240,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
-  const { status, priority, category, assignee_id } = req.body;
+  const { status, priority, category, assignee_id, solution } = req.body;
   const fields = [];
   const values = [];
 
@@ -246,6 +248,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
   if (priority !== undefined)    { fields.push('priority = ?');    values.push(priority); }
   if (category !== undefined)    { fields.push('category = ?');    values.push(category); }
   if (assignee_id !== undefined) { fields.push('assignee_id = ?'); values.push(assignee_id || null); }
+  if (solution !== undefined)    { fields.push('solution = ?');    values.push(solution || null); }
 
   if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
 

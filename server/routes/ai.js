@@ -241,6 +241,59 @@ router.post('/assist', async (req, res) => {
     console.error('[ATLAS] company profile context error:', e.message);
   }
 
+  // Build employee context block
+  try {
+    const submitterId = req.user.id;
+    const firstName = req.user.name?.split(' ')[0] || req.user.name;
+
+    const [empProfile, recentTickets, patterns] = await Promise.all([
+      db.get('SELECT * FROM employee_profiles WHERE user_id = ?', submitterId),
+      db.all(
+        'SELECT title, category, status, solution, created_at FROM tickets WHERE submitter_id = ? ORDER BY created_at DESC LIMIT 10',
+        submitterId
+      ),
+      db.all(
+        'SELECT category, COUNT(*) as count FROM tickets WHERE submitter_id = ? GROUP BY category HAVING COUNT(*) >= 3 ORDER BY count DESC',
+        submitterId
+      ),
+    ]);
+
+    const empCtx = [];
+    if (empProfile) {
+      if (empProfile.department)       empCtx.push(`Department: ${empProfile.department}`);
+      if (empProfile.device_type)      empCtx.push(`Device: ${empProfile.device_type}`);
+      if (empProfile.primary_software) empCtx.push(`Primary software: ${empProfile.primary_software}`);
+      if (empProfile.tenure_months) {
+        const y = Math.floor(empProfile.tenure_months / 12);
+        const m = empProfile.tenure_months % 12;
+        empCtx.push(`Tenure: ${[y > 0 ? `${y} year${y>1?'s':''}` : '', m > 0 ? `${m} month${m>1?'s':''}` : ''].filter(Boolean).join(', ')}`);
+      }
+      if (empProfile.notes) empCtx.push(`Notes: ${empProfile.notes}`);
+    }
+    if (recentTickets.length > 0) {
+      const lines = recentTickets.map(t => {
+        let l = `• [${t.category}] ${t.title} (${t.status})`;
+        if (t.solution) l += ` — fixed by: ${t.solution}`;
+        return l;
+      }).join('\n');
+      empCtx.push(`Recent tickets:\n${lines}`);
+    }
+    if (patterns.length > 0) {
+      const desc = patterns.map(p => `${p.category} (${p.count} tickets)`).join(', ');
+      empCtx.push(`Recurring issue patterns for this employee: ${desc} — worth noting if relevant to this issue`);
+    }
+
+    if (firstName || empCtx.length > 0) {
+      let empBlock = `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nEMPLOYEE CONTEXT — you know this person. Use naturally:\n`;
+      if (firstName) empBlock += `• Name: ${firstName} — use their first name once in your response, not every sentence\n`;
+      if (empCtx.length) empBlock += empCtx.map(l => `• ${l}`).join('\n') + '\n';
+      empBlock += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      systemWithContext = systemWithContext + empBlock;
+    }
+  } catch (e) {
+    console.error('[ATLAS] employee context error:', e.message);
+  }
+
   try {
     const response = await anthropic.messages.create({
       model: 'claude-opus-4-6',

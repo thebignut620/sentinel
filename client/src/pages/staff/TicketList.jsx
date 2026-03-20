@@ -105,6 +105,11 @@ function KanbanCard({ ticket, staffUsers, onUpdate, selected, onToggleSelect, bu
             <Link to={`/tickets/${ticket.id}`} className="text-sm font-medium text-gray-200 hover:text-pine-300 transition-colors leading-snug line-clamp-2 block">
               {ticket.title}
             </Link>
+            {ticket.category_ticket_count >= 3 && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-900/50 text-amber-300 border border-amber-800/50 mt-1">
+                ↩ Recurring Issue
+              </span>
+            )}
           </div>
         </div>
 
@@ -257,12 +262,17 @@ function ListRow({ ticket, selected, onToggleSelect, bulkMode, onQuickUpdate, st
       </td>
       <td className="px-3 py-3 text-gray-600 text-xs">{ticket.id}</td>
       <td className="px-3 py-3 max-w-xs">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {isNew(ticket.created_at) && <span className="h-1.5 w-1.5 rounded-full bg-pine-400 shrink-0 animate-pulse" />}
           <span className="text-sm">{CATEGORY_ICONS[ticket.category]}</span>
           <Link to={`/tickets/${ticket.id}`} className="text-pine-400 hover:text-pine-300 font-medium transition-colors truncate">
             {ticket.title}
           </Link>
+          {ticket.category_ticket_count >= 3 && (
+            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-amber-900/50 text-amber-300 border border-amber-800/50 shrink-0">
+              ↩ Recurring
+            </span>
+          )}
         </div>
       </td>
       <td className="px-3 py-3 text-gray-400 text-xs">{ticket.submitter_name}</td>

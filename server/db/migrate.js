@@ -120,6 +120,17 @@ export async function runMigrations() {
       created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    `CREATE TABLE IF NOT EXISTS employee_profiles (
+      id               SERIAL PRIMARY KEY,
+      user_id          INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      department       TEXT,
+      device_type      TEXT,
+      primary_software TEXT,
+      tenure_months    INTEGER,
+      notes            TEXT,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
   ];
 
   for (const sql of tables) {
@@ -133,6 +144,7 @@ export async function runMigrations() {
   await addColumnIfMissing('tickets', 'atlas_suggestions',  'TEXT');
   await addColumnIfMissing('tickets', 'resolution_report',  'TEXT');
   await addColumnIfMissing('tickets', 'ai_auto_assigned',   'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('tickets', 'solution',           'TEXT');
 
   // Seed default settings
   const settingSeeds = [

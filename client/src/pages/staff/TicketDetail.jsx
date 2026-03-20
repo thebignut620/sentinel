@@ -124,6 +124,12 @@ function ResolutionCard({ ticket }) {
         {ticket.resolved_at && <div><span className="text-gray-500">Resolved at</span><p className="text-gray-300 mt-0.5">{new Date(ticket.resolved_at).toLocaleString()}</p></div>}
         {hours !== null && <div><span className="text-gray-500">Handle time</span><p className="text-gray-300 mt-0.5">{hours}h total</p></div>}
       </div>
+      {ticket.solution && (
+        <div className="bg-pine-900/20 border border-pine-800/40 rounded-lg px-3 py-2.5 mb-3">
+          <p className="text-[10px] text-pine-500 font-semibold uppercase tracking-wider mb-1">What fixed it</p>
+          <p className="text-xs text-gray-300 leading-relaxed">{ticket.solution}</p>
+        </div>
+      )}
 
       {ticket.resolution_report && (
         <>
@@ -253,6 +259,8 @@ export default function TicketDetail() {
   const [editPriority, setEditPriority] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editAssignee, setEditAssignee] = useState('');
+  const [solution,     setSolution]     = useState('');
+  const [empProfile,   setEmpProfile]   = useState(null);
 
   useEffect(() => {
     loadAll();
@@ -260,6 +268,13 @@ export default function TicketDetail() {
       api.get('/users').then(r => setStaff(r.data.filter(u => u.role !== 'employee' && u.is_active)));
     }
   }, [id]);
+
+  // Load employee profile once ticket is loaded (for IT staff panel)
+  useEffect(() => {
+    if (ticket && user.role !== 'employee') {
+      api.get(`/employee-profiles/${ticket.submitter_id}`).then(r => setEmpProfile(r.data)).catch(() => {});
+    }
+  }, [ticket?.submitter_id]);
 
   const loadAll = async () => {
     try {
@@ -284,10 +299,14 @@ export default function TicketDetail() {
     setSubmitting(true);
     try {
       const wasNotResolved = ticket?.status !== 'resolved' && ticket?.priority === 'critical';
-      await api.patch(`/tickets/${id}`, {
+      const patch = {
         status: editStatus, priority: editPriority,
         category: editCategory, assignee_id: editAssignee || null,
-      });
+      };
+      if (['resolved', 'closed'].includes(editStatus) && solution.trim()) {
+        patch.solution = solution.trim();
+      }
+      await api.patch(`/tickets/${id}`, patch);
       addToast('Ticket updated', 'success');
       setUpdateSuccess(true);
       setTimeout(() => setUpdateSuccess(false), 2000);
@@ -592,6 +611,18 @@ export default function TicketDetail() {
                     {staffUsers.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                   </select>
                 </div>
+                {['resolved', 'closed'].includes(editStatus) && !ticket.solution && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">What fixed it? <span className="text-gray-700">(optional)</span></label>
+                    <SmartTextarea
+                      value={solution}
+                      onChange={e => setSolution(e.target.value)}
+                      rows={2}
+                      placeholder="e.g. Cleared print spooler and reinstalled driver…"
+                      maxLength={500}
+                    />
+                  </div>
+                )}
                 <SpinnerButton
                   onClick={handleUpdate}
                   disabled={submitting}
@@ -619,6 +650,29 @@ export default function TicketDetail() {
               </div>
             ))}
           </div>
+
+          {/* Employee profile panel */}
+          {canManage && empProfile && (
+            <div className="card p-4 space-y-2">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Submitter Profile</h3>
+              {[
+                { label: 'Department',  val: empProfile.department },
+                { label: 'Device',      val: empProfile.device_type },
+                { label: 'Software',    val: empProfile.primary_software },
+                { label: 'Tenure',      val: empProfile.tenure_months
+                    ? `${Math.floor(empProfile.tenure_months/12) > 0 ? `${Math.floor(empProfile.tenure_months/12)}y ` : ''}${empProfile.tenure_months%12 > 0 ? `${empProfile.tenure_months%12}mo` : ''}`.trim()
+                    : null },
+              ].filter(r => r.val).map(row => (
+                <div key={row.label} className="flex justify-between text-xs">
+                  <span className="text-gray-600">{row.label}</span>
+                  <span className="text-gray-400 text-right max-w-[60%] truncate">{row.val}</span>
+                </div>
+              ))}
+              {empProfile.notes && (
+                <p className="text-[10px] text-gray-600 pt-1 border-t border-gray-800 leading-relaxed">{empProfile.notes}</p>
+              )}
+            </div>
+          )}
 
           {/* Activity timeline */}
           <div className="card p-4">
