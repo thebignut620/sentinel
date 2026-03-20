@@ -28,6 +28,7 @@ function createOAuthClient() {
 
 export function getAuthUrl() {
   const client = createOAuthClient();
+  console.log('[Google OAuth] redirect_uri =', process.env.GOOGLE_REDIRECT_URI);
   return client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,

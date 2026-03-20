@@ -331,13 +331,20 @@ export default function TicketList() {
   const [bulkMode, setBulkMode]   = useState(false);
 
   const load = useCallback(async () => {
-    const [tRes, uRes] = await Promise.all([
-      api.get('/tickets'),
-      api.get('/users'),
-    ]);
-    setTickets(tRes.data);
-    setStaff(uRes.data.filter(u => u.role !== 'employee' && u.is_active));
-    setLoading(false);
+    try {
+      const [tRes, uRes] = await Promise.all([
+        api.get('/tickets'),
+        api.get('/users'),
+      ]);
+      console.log('[TicketList] tickets response:', tRes.status, 'count:', tRes.data?.length, 'role:', user?.role);
+      console.log('[TicketList] users response:', uRes.status, 'count:', uRes.data?.length);
+      setTickets(tRes.data);
+      setStaff(uRes.data.filter(u => u.role !== 'employee' && u.is_active));
+    } catch (err) {
+      console.error('[TicketList] load error:', err.response?.status, err.response?.data, err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);

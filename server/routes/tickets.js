@@ -51,7 +51,9 @@ router.get('/', authenticate, async (req, res) => {
   }
   query += ' ORDER BY t.created_at DESC';
 
-  res.json(await db.all(query, ...params));
+  const rows = await db.all(query, ...params);
+  console.log(`[tickets] GET / role=${req.user.role} id=${req.user.id} returned=${rows.length}`);
+  res.json(rows);
 });
 
 // Get ticket history
