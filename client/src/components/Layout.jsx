@@ -144,6 +144,17 @@ function NavLink({ to, icon, label, collapsed }) {
   );
 }
 
+function NavSection({ label, collapsed }) {
+  if (collapsed) {
+    return <div className="mx-3 my-1 border-t border-gray-800/80" />;
+  }
+  return (
+    <div className="px-3 pt-3 pb-1">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-600">{label}</p>
+    </div>
+  );
+}
+
 function Avatar({ name }) {
   const initials = name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '?';
   return (
@@ -184,6 +195,7 @@ export default function Layout() {
       { to: '/my-tickets',      icon: ICONS.tickets,   label: 'My Tickets' },
       { to: '/knowledge-base',  icon: ICONS.kb,        label: 'Knowledge Base' },
       { to: '/my-profile',      icon: ICONS.person,    label: 'My Profile' },
+      { section: 'Security' },
       { to: '/settings/2fa',    icon: ICONS.shield,    label: '2FA Security' },
     ],
     it_staff: [
@@ -191,18 +203,22 @@ export default function Layout() {
       { to: '/tickets',        icon: ICONS.tickets,     label: 'All Tickets' },
       { to: '/knowledge-base', icon: ICONS.kb,          label: 'Knowledge Base' },
       { to: '/admin/assets',   icon: ICONS.asset,       label: 'Assets' },
+      { section: 'Security' },
       { to: '/settings/2fa',   icon: ICONS.shield,      label: '2FA Security' },
     ],
     admin: [
       { to: '/dashboard',              icon: ICONS.dashboard,   label: 'Dashboard' },
       { to: '/tickets',                icon: ICONS.tickets,     label: 'All Tickets' },
       { to: '/knowledge-base',         icon: ICONS.kb,          label: 'Knowledge Base' },
+      { section: 'Management' },
       { to: '/admin/users',            icon: ICONS.users,       label: 'User Management' },
       { to: '/admin/assets',           icon: ICONS.asset,       label: 'Assets' },
       { to: '/admin/departments',      icon: ICONS.departments, label: 'Departments' },
       { to: '/admin/maintenance',      icon: ICONS.wrench,      label: 'Maintenance' },
       { to: '/admin/custom-fields',    icon: ICONS.settings,    label: 'Custom Fields' },
       { to: '/admin/integrations',     icon: ICONS.plug,        label: 'Integrations' },
+      { section: 'Security & Config' },
+      { to: '/settings/2fa',           icon: ICONS.shield,      label: '2FA Security' },
       { to: '/admin/audit-log',        icon: ICONS.audit,       label: 'Audit Log' },
       { to: '/admin/permissions',      icon: ICONS.shield,      label: 'Permissions' },
       { to: '/admin/company-profile',  icon: ICONS.building,    label: 'Company Profile' },
@@ -233,9 +249,11 @@ export default function Layout() {
 
         {/* Nav */}
         <nav className="flex-1 p-2 space-y-1 overflow-y-auto overflow-x-hidden">
-          {links.map(item => (
-            <NavLink key={item.to} {...item} collapsed={collapsed} />
-          ))}
+          {links.map((item, i) =>
+            item.section
+              ? <NavSection key={`section-${i}`} label={item.section} collapsed={collapsed} />
+              : <NavLink key={item.to} {...item} collapsed={collapsed} />
+          )}
         </nav>
 
         {/* Bell + User footer */}
