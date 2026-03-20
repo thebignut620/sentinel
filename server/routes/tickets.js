@@ -3,7 +3,8 @@ import db from '../db/connection.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { sendTicketStatusEmail } from '../services/email.js';
 import * as atlas from '../services/atlas.js';
-import { detectActionType, getIntegration } from '../services/googleWorkspace.js';
+import { detectActionType as detectGoogleAction, getIntegration as getGoogleIntegration } from '../services/googleWorkspace.js';
+import { detectActionType as detectMsAction, getIntegration as getMsIntegration, sendTeamsNotification } from '../services/microsoftGraph.js';
 
 const router = express.Router();
 
@@ -206,26 +207,58 @@ router.post('/', authenticate, async (req, res) => {
     }
   });
 
-  // ── Google Workspace: detect actionable tickets and create pending atlas_action
+  // ── Integration action detection: create pending atlas_action for each active provider
   setImmediate(async () => {
     try {
-      const integration = await getIntegration();
-      if (!integration) return;
-      const actionType = detectActionType(title.trim(), description.trim());
-      if (!actionType) return;
-      await db.run(
-        `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details)
-         VALUES (?, ?, ?, ?, ?)`,
-        ticket.id,
-        actionType,
-        req.user.email,
-        req.user.name,
-        actionType === 'access_grant' ? JSON.stringify({ drive_id: '', role: 'reader' }) : null,
-      );
+      const titleTrimmed = title.trim();
+      const descTrimmed  = description.trim();
+
+      const [googleInt, msInt] = await Promise.all([
+        getGoogleIntegration(),
+        getMsIntegration(),
+      ]);
+
+      if (googleInt) {
+        const actionType = detectGoogleAction(titleTrimmed, descTrimmed);
+        if (actionType) {
+          await db.run(
+            `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details, provider)
+             VALUES (?, ?, ?, ?, ?, 'google')`,
+            ticket.id, actionType, req.user.email, req.user.name,
+            actionType === 'access_grant' ? JSON.stringify({ drive_id: '', role: 'reader' }) : null,
+          );
+        }
+      }
+
+      if (msInt) {
+        const actionType = detectMsAction(titleTrimmed, descTrimmed);
+        if (actionType) {
+          await db.run(
+            `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details, provider)
+             VALUES (?, ?, ?, ?, ?, 'microsoft')`,
+            ticket.id, actionType, req.user.email, req.user.name,
+            actionType === 'access_grant' ? JSON.stringify({ site_id: '', role: 'read' }) : null,
+          );
+        }
+      }
     } catch (e) {
-      console.error('[ATLAS] Google action detection error:', e.message);
+      console.error('[ATLAS] Integration action detection error:', e.message);
     }
   });
+
+  // ── Teams notification for critical tickets
+  if (finalPriority === 'critical') {
+    setImmediate(async () => {
+      try {
+        await sendTeamsNotification(
+          `Critical ticket submitted by ${req.user.name}: "${title.trim()}" — requires immediate attention. Ticket #${ticket.id}`,
+          '🚨 Critical Ticket Created',
+        );
+      } catch (e) {
+        console.error('[M365] Teams critical ticket notification error:', e.message);
+      }
+    });
+  }
 
   res.status(201).json({ ...ticket, assignee_id: finalAssignee });
 });

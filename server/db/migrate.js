@@ -187,6 +187,8 @@ export async function runMigrations() {
   await addColumnIfMissing('tickets', 'resolution_report',  'TEXT');
   await addColumnIfMissing('tickets', 'ai_auto_assigned',   'INTEGER NOT NULL DEFAULT 0');
   await addColumnIfMissing('tickets', 'solution',           'TEXT');
+  await addColumnIfMissing('atlas_actions', 'provider',     "TEXT DEFAULT 'google'");
+  await addColumnIfMissing('integrations',  'metadata',     'TEXT');
 
   // Seed default settings
   const settingSeeds = [

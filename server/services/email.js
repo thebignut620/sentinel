@@ -163,6 +163,41 @@ export async function sendGoogleTempPassword({ to, name, tempPassword, ticketId 
   }
 }
 
+export async function sendMicrosoftTempPassword({ to, name, tempPassword, ticketId }) {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const cfg = await getConfig();
+    const company = cfg.company_name || 'Sentinel IT';
+    await transporter.sendMail({
+      from: cfg.smtp_from || cfg.smtp_user,
+      to,
+      subject: `[${company}] Your temporary Microsoft 365 password — Ticket #${ticketId}`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+          <div style="background:#0078d4;padding:20px 32px;">
+            <h1 style="margin:0;font-size:20px;color:#fff;">${company}</h1>
+          </div>
+          <div style="padding:32px;">
+            <h2 style="margin-top:0;color:#fff;">Your Temporary Microsoft 365 Password</h2>
+            <p>Hi <strong>${name}</strong>,</p>
+            <p>Your IT team has reset your Microsoft 365 password. Use the temporary password below to sign in:</p>
+            <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:20px;margin:20px 0;text-align:center;">
+              <p style="margin:0 0 8px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:1px;">Temporary Password</p>
+              <p style="margin:0;font-size:26px;font-weight:700;color:#0078d4;letter-spacing:4px;font-family:monospace;">${tempPassword}</p>
+            </div>
+            <p style="color:#f59e0b;">⚠️ You will be required to change this password when you next sign in.</p>
+            <p style="color:#888;font-size:13px;">This was actioned on Ticket #${ticketId}. If you did not request this reset, contact your IT team immediately.</p>
+            <p style="margin-top:32px;color:#888;font-size:13px;">— ${company} Support Team</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[email] Failed to send Microsoft temp password email:', err.message);
+  }
+}
+
 export async function sendPasswordResetEmail({ to, name, token }) {
   try {
     const transporter = await getTransporter();

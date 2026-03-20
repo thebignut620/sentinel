@@ -11,27 +11,41 @@ import SentimentBadge from '../../components/SentimentBadge.jsx';
 import api from '../../api/client.js';
 
 // ── ATLAS Action Approval Card ────────────────────────────────────────────────
-const ACTION_LABELS = {
+const GOOGLE_ACTION_LABELS = {
   password_reset: 'Reset Google Workspace Password',
   account_unlock: 'Unlock Google Workspace Account',
   access_grant:   'Grant Google Drive Access',
 };
+const MS_ACTION_LABELS = {
+  password_reset: 'Reset Microsoft 365 Password',
+  account_unlock: 'Unlock Microsoft 365 Account',
+  access_grant:   'Grant SharePoint Access',
+};
 const ACTION_ICONS = { password_reset: '🔑', account_unlock: '🔓', access_grant: '📂' };
 const DRIVE_ROLES  = ['reader', 'commenter', 'writer'];
+const SP_ROLES     = ['read', 'contribute', 'write'];
+
+function getActionLabel(action) {
+  return (action.provider === 'microsoft' ? MS_ACTION_LABELS : GOOGLE_ACTION_LABELS)[action.action_type];
+}
 
 function AtlasActionCard({ action, onApprove, onDeny, loading }) {
-  const [driveId, setDriveId]   = useState('');
-  const [driveRole, setDriveRole] = useState('reader');
-  const [saving, setSaving]     = useState(false);
-  const needsDriveId = action.action_type === 'access_grant';
-  const details = JSON.parse(action.details || '{}');
-  const hasDriveId = !!(details.drive_id);
+  const [resourceId, setResourceId] = useState('');
+  const [role, setRole]             = useState(action.provider === 'microsoft' ? 'read' : 'reader');
+  const [saving, setSaving]         = useState(false);
+  const isMs         = action.provider === 'microsoft';
+  const needsResId   = action.action_type === 'access_grant';
+  const details      = JSON.parse(action.details || '{}');
+  const hasResId     = isMs ? !!(details.site_id) : !!(details.drive_id);
 
-  const handleSaveDriveId = async () => {
-    if (!driveId.trim()) return;
+  const handleSaveResId = async () => {
+    if (!resourceId.trim()) return;
     setSaving(true);
     try {
-      await api.patch(`/integrations/actions/${action.id}`, { drive_id: driveId.trim(), role: driveRole });
+      const patch = isMs
+        ? { site_id: resourceId.trim(), role }
+        : { drive_id: resourceId.trim(), role };
+      await api.patch(`/integrations/actions/${action.id}`, patch);
       onApprove(action.id, true);
     } catch { setSaving(false); }
   };
@@ -50,8 +64,13 @@ function AtlasActionCard({ action, onApprove, onDeny, loading }) {
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/40 text-amber-300 border border-amber-800/50">
               Awaiting approval
             </span>
+            {isMs ? (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-900/30 text-blue-400 border border-blue-800/30">M365</span>
+            ) : (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 text-gray-500 border border-gray-700">Google</span>
+            )}
           </div>
-          <p className="text-sm font-semibold text-white mt-1">{ACTION_LABELS[action.action_type]}</p>
+          <p className="text-sm font-semibold text-white mt-1">{getActionLabel(action)}</p>
           <p className="text-xs text-gray-400 mt-0.5">
             Target: <span className="text-gray-300 font-medium">{action.target_email}</span>
             {action.target_name && <> ({action.target_name})</>}
@@ -59,35 +78,41 @@ function AtlasActionCard({ action, onApprove, onDeny, loading }) {
         </div>
       </div>
 
-      {needsDriveId && !hasDriveId && (
+      {needsResId && !hasResId && (
         <div className="space-y-2 pt-1">
-          <p className="text-xs text-gray-400">Enter the Google Drive folder ID before approving:</p>
+          <p className="text-xs text-gray-400">
+            {isMs
+              ? 'Enter the SharePoint site ID before approving:'
+              : 'Enter the Google Drive folder ID before approving:'}
+          </p>
           <input
             className="input w-full text-xs"
-            placeholder="Drive folder ID (from URL: /folders/[ID])"
-            value={driveId}
-            onChange={e => setDriveId(e.target.value)}
+            placeholder={isMs ? 'SharePoint site ID (e.g. contoso.sharepoint.com,abc…)' : 'Drive folder ID (from URL: /folders/[ID])'}
+            value={resourceId}
+            onChange={e => setResourceId(e.target.value)}
           />
-          <select className="input w-full text-xs" value={driveRole} onChange={e => setDriveRole(e.target.value)}>
-            {DRIVE_ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+          <select className="input w-full text-xs" value={role} onChange={e => setRole(e.target.value)}>
+            {(isMs ? SP_ROLES : DRIVE_ROLES).map(r => (
+              <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>
+            ))}
           </select>
           <div className="flex gap-2">
-            <SpinnerButton loading={saving} onClick={handleSaveDriveId} disabled={!driveId.trim() || saving} className="btn-primary px-3 py-1.5 text-xs">
+            <SpinnerButton loading={saving} onClick={handleSaveResId} disabled={!resourceId.trim() || saving} className="btn-primary px-3 py-1.5 text-xs">
               Approve & Execute
             </SpinnerButton>
-            <button onClick={() => onDeny(action.id)} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-50">
+            <button type="button" onClick={() => onDeny(action.id)} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-50">
               Deny
             </button>
           </div>
         </div>
       )}
 
-      {(!needsDriveId || hasDriveId) && (
+      {(!needsResId || hasResId) && (
         <div className="flex gap-2 pt-1">
           <button
             type="button"
             onClick={() => {
-              console.log('[AtlasActionCard] approve clicked — action.id:', action.id, 'type:', action.action_type, 'loading:', loading);
+              console.log('[AtlasActionCard] approve clicked — action.id:', action.id, 'type:', action.action_type, 'provider:', action.provider);
               onApprove(action.id);
             }}
             disabled={loading}
@@ -121,16 +146,17 @@ function AtlasActionResult({ action }) {
   const icon = { executed: '✓', denied: '✕', failed: '⚠' };
   return (
     <div className={`rounded-xl border p-3 text-xs ${statusColors[action.status] || ''}`}>
-      <span className="font-semibold">{icon[action.status]} {ACTION_LABELS[action.action_type]}</span>
-      {action.result && <p className="mt-0.5 opacity-80">{action.result}</p>}
+      <span className="font-semibold">{icon[action.status]} {getActionLabel(action)}</span>
+      {action.result        && <p className="mt-0.5 opacity-80">{action.result}</p>}
       {action.error_message && <p className="mt-0.5 opacity-80">Error: {action.error_message}</p>}
     </div>
   );
 }
 
-// ── Google Workspace Context Panel ────────────────────────────────────────────
-function GoogleContextPanel({ email }) {
-  const [ctx, setCtx]       = useState(null);
+// ── Integration Context Panels ────────────────────────────────────────────────
+// Single fetch for both providers; renders whichever panels have data.
+function IntegrationContextPanels({ email }) {
+  const [ctx, setCtx]         = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -142,8 +168,38 @@ function GoogleContextPanel({ email }) {
   }, [email]);
 
   if (loading) return <div className="skeleton h-24 rounded-xl" />;
-  if (!ctx || !ctx.found) return null;
+  if (!ctx) return null;
 
+  return (
+    <>
+      {ctx.google?.found    && <GoogleContextPanel    ctx={ctx.google} />}
+      {ctx.microsoft?.found && <MicrosoftContextPanel ctx={ctx.microsoft} />}
+    </>
+  );
+}
+
+function GroupChips({ groups, max = 4 }) {
+  if (!groups?.length) return null;
+  return (
+    <div>
+      <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider mb-1.5">Groups</p>
+      <div className="flex flex-wrap gap-1">
+        {groups.slice(0, max).map(g => (
+          <span key={g} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 truncate max-w-[120px]">
+            {g.includes('@') ? g.split('@')[0] : g}
+          </span>
+        ))}
+        {groups.length > max && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-600">
+            +{groups.length - max}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GoogleContextPanel({ ctx }) {
   return (
     <div className="card p-4 space-y-2.5">
       <div className="flex items-center gap-2">
@@ -160,45 +216,54 @@ function GoogleContextPanel({ email }) {
           <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-pine-900/40 text-pine-300 border border-pine-800/40">Active</span>
         )}
       </div>
-
       <div className="space-y-1.5 text-xs">
-        {ctx.org_unit && (
-          <div className="flex justify-between">
-            <span className="text-gray-600">Org unit</span>
-            <span className="text-gray-400 text-right max-w-[60%] truncate">{ctx.org_unit}</span>
-          </div>
-        )}
-        {ctx.last_login && (
-          <div className="flex justify-between">
-            <span className="text-gray-600">Last login</span>
-            <span className="text-gray-400">{new Date(ctx.last_login).toLocaleDateString()}</span>
-          </div>
-        )}
-        {ctx.is_admin && (
-          <div className="flex justify-between">
-            <span className="text-gray-600">Role</span>
-            <span className="text-amber-400">Admin</span>
-          </div>
+        {ctx.org_unit   && <div className="flex justify-between"><span className="text-gray-600">Org unit</span><span className="text-gray-400 text-right max-w-[60%] truncate">{ctx.org_unit}</span></div>}
+        {ctx.last_login && <div className="flex justify-between"><span className="text-gray-600">Last login</span><span className="text-gray-400">{new Date(ctx.last_login).toLocaleDateString()}</span></div>}
+        {ctx.is_admin   && <div className="flex justify-between"><span className="text-gray-600">Role</span><span className="text-amber-400">Admin</span></div>}
+      </div>
+      <GroupChips groups={ctx.groups} />
+    </div>
+  );
+}
+
+function MicrosoftContextPanel({ ctx }) {
+  return (
+    <div className="card p-4 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <svg viewBox="0 0 21 21" className="w-3.5 h-3.5 shrink-0">
+          <rect x="1"  y="1"  width="9" height="9" fill="#F25022"/>
+          <rect x="11" y="1"  width="9" height="9" fill="#7FBA00"/>
+          <rect x="1"  y="11" width="9" height="9" fill="#00A4EF"/>
+          <rect x="11" y="11" width="9" height="9" fill="#FFB900"/>
+        </svg>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Microsoft 365</h3>
+        {ctx.account_enabled === false ? (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-800/40">Disabled</span>
+        ) : (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-pine-900/40 text-pine-300 border border-pine-800/40">Active</span>
         )}
       </div>
-
-      {ctx.groups?.length > 0 && (
+      <div className="space-y-1.5 text-xs">
+        {ctx.job_title   && <div className="flex justify-between"><span className="text-gray-600">Title</span><span className="text-gray-400 text-right max-w-[60%] truncate">{ctx.job_title}</span></div>}
+        {ctx.department  && <div className="flex justify-between"><span className="text-gray-600">Department</span><span className="text-gray-400 text-right max-w-[60%] truncate">{ctx.department}</span></div>}
+        {ctx.last_sign_in && <div className="flex justify-between"><span className="text-gray-600">Last sign-in</span><span className="text-gray-400">{new Date(ctx.last_sign_in).toLocaleDateString()}</span></div>}
+      </div>
+      {ctx.licenses?.length > 0 && (
         <div>
-          <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider mb-1.5">Groups</p>
+          <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider mb-1.5">Licenses</p>
           <div className="flex flex-wrap gap-1">
-            {ctx.groups.slice(0, 4).map(g => (
-              <span key={g} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 truncate max-w-[120px]">
-                {g.split('@')[0]}
+            {ctx.licenses.slice(0, 3).map(l => (
+              <span key={l} className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-900/20 border border-blue-800/30 text-blue-400 truncate max-w-[150px]">
+                {l.replace(/_/g, ' ')}
               </span>
             ))}
-            {ctx.groups.length > 4 && (
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-600">
-                +{ctx.groups.length - 4}
-              </span>
+            {ctx.licenses.length > 3 && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-600">+{ctx.licenses.length - 3}</span>
             )}
           </div>
         </div>
       )}
+      <GroupChips groups={ctx.groups} />
     </div>
   );
 }
@@ -926,9 +991,9 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Google Workspace context */}
+          {/* Integration context panels (single fetch, both providers) */}
           {canManage && ticket.submitter_email && (
-            <GoogleContextPanel email={ticket.submitter_email} />
+            <IntegrationContextPanels email={ticket.submitter_email} />
           )}
 
           {/* Activity timeline */}
