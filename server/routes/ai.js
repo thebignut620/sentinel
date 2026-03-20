@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/connection.js';
 import * as atlas from '../services/atlas.js';
 import { updateSolutionOutcome } from '../services/learning.js';
+import { INDUSTRY_PROMPTS } from '../services/industryPrompts.js';
 
 const router = express.Router();
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -186,8 +187,6 @@ If someone describes active ransomware, malware spreading across their machine, 
 No troubleshooting. No additional steps. Just disconnect and escalate. This is the only exception.`;
 
 // POST /ai/assist — ATLAS interactive help
-
-// POST /ai/assist — ATLAS interactive help
 router.post('/assist', async (req, res) => {
   const { problem } = req.body;
   if (!problem?.trim()) {
@@ -201,8 +200,10 @@ router.post('/assist', async (req, res) => {
 
   // Build company context block to inject into ATLAS system prompt
   let systemWithContext = ATLAS_SYSTEM;
+  let companyIndustry = null;
   try {
     const profile = await db.get('SELECT * FROM company_profile WHERE completed = 1 LIMIT 1');
+    if (profile?.industry) companyIndustry = profile.industry;
     if (profile) {
       const osTypes       = JSON.parse(profile.os_types       || '[]');
       const commTools     = JSON.parse(profile.comm_tools     || '[]');
@@ -237,6 +238,11 @@ router.post('/assist', async (req, res) => {
         }
 
         systemWithContext = ATLAS_SYSTEM + contextBlock;
+      }
+
+      // Inject industry specialization layer if industry is set
+      if (profile.industry && INDUSTRY_PROMPTS[profile.industry]) {
+        systemWithContext += INDUSTRY_PROMPTS[profile.industry];
       }
     }
   } catch (e) {
@@ -365,8 +371,8 @@ ${problem}`,
       }
     }
 
-    console.log('[ATLAS] final response — suggestion length:', suggestion.length, '| matched_solution_ids:', matchedSolutionIds, '| confidence:', confidence);
-    res.json({ resolved, suggestion, matched_solution_ids: matchedSolutionIds, confidence });
+    console.log('[ATLAS] final response — suggestion length:', suggestion.length, '| industry:', companyIndustry, '| confidence:', confidence);
+    res.json({ resolved, suggestion, matched_solution_ids: matchedSolutionIds, confidence, industry: companyIndustry });
   } catch (err) {
     console.error('[ATLAS] assist error:', err.message);
     console.error('[ATLAS] assist stack:', err.stack);

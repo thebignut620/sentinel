@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import SmartTextarea from '../../components/SmartTextarea.jsx';
@@ -38,6 +38,33 @@ function ConfidenceBadge({ confidence }) {
   return (
     <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border bg-gray-800/60 text-gray-600 border-gray-700/50 shrink-0">
       New pattern
+    </span>
+  );
+}
+
+const INDUSTRY_BADGE_STYLES = {
+  Technology:    'bg-blue-900/40 text-blue-300 border-blue-800/50',
+  Healthcare:    'bg-red-900/40 text-red-300 border-red-800/50',
+  Legal:         'bg-amber-900/40 text-amber-300 border-amber-800/50',
+  Education:     'bg-teal-900/40 text-teal-300 border-teal-800/50',
+  Finance:       'bg-emerald-900/40 text-emerald-300 border-emerald-800/50',
+  Retail:        'bg-orange-900/40 text-orange-300 border-orange-800/50',
+  Manufacturing: 'bg-slate-800/80 text-slate-300 border-slate-700/50',
+  'Oil & Gas':   'bg-yellow-900/40 text-yellow-300 border-yellow-800/50',
+  'Real Estate': 'bg-indigo-900/40 text-indigo-300 border-indigo-800/50',
+  Hospitality:   'bg-purple-900/40 text-purple-300 border-purple-800/50',
+  Nonprofit:     'bg-pine-900/60 text-pine-300 border-pine-800/50',
+  Government:    'bg-blue-950/60 text-blue-400 border-blue-900/50',
+};
+
+function IndustryBadge({ industry, size = 'default' }) {
+  if (!industry || !INDUSTRY_BADGE_STYLES[industry]) return null;
+  const cls = size === 'sm'
+    ? 'text-[9px] px-1.5 py-0.5'
+    : 'text-[10px] px-2 py-0.5';
+  return (
+    <span className={`${cls} rounded-full font-medium border uppercase tracking-wider shrink-0 ${INDUSTRY_BADGE_STYLES[industry]}`}>
+      {industry} Mode
     </span>
   );
 }
@@ -94,6 +121,13 @@ export default function AIHelpFlow() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [createdTicketId, setCreatedTicketId] = useState(null);
   const [error, setError] = useState('');
+  const [pageIndustry, setPageIndustry] = useState(null);
+
+  useEffect(() => {
+    api.get('/company-profile').then(r => {
+      if (r.data?.industry) setPageIndustry(r.data.industry);
+    }).catch(() => {});
+  }, []);
 
   const reportOutcome = async (resolved) => {
     const ids = aiResult?.matched_solution_ids;
@@ -165,11 +199,12 @@ export default function AIHelpFlow() {
   return (
     <div className="max-w-2xl space-y-5 animate-fadeIn">
       <div>
-        <div className="flex items-center gap-2 mb-0.5">
+        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
           <h1 className="text-2xl font-bold text-white">Get IT Help</h1>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium uppercase tracking-wider">
             ATLAS
           </span>
+          <IndustryBadge industry={pageIndustry} />
         </div>
         <p className="text-gray-500 text-sm mt-1">
           Describe your issue — ATLAS will diagnose it first.
@@ -216,9 +251,10 @@ export default function AIHelpFlow() {
       {step === STEPS.SOLUTION && (
         <>
           <div className="card border-pine-800/50 p-6 animate-fadeIn">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="h-6 w-6 rounded-full bg-pine-900/60 border border-pine-800/50 flex items-center justify-center text-xs font-bold text-pine-300">A</div>
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <div className="h-6 w-6 rounded-full bg-pine-900/60 border border-pine-800/50 flex items-center justify-center text-xs font-bold text-pine-300 shrink-0">A</div>
               <span className="font-semibold text-pine-300">ATLAS Diagnosis</span>
+              <IndustryBadge industry={aiResult?.industry || pageIndustry} size="sm" />
               <ConfidenceBadge confidence={aiResult?.confidence} />
             </div>
 

@@ -3,7 +3,22 @@ import { useToast } from '../../contexts/ToastContext.jsx';
 import SpinnerButton from '../../components/SpinnerButton.jsx';
 import api from '../../api/client.js';
 
-const INDUSTRIES = ['Technology', 'Healthcare', 'Finance', 'Legal', 'Education', 'Retail', 'Manufacturing', 'Real Estate', 'Nonprofit', 'Government', 'Other'];
+const INDUSTRIES = ['Technology', 'Healthcare', 'Legal', 'Education', 'Finance', 'Retail', 'Manufacturing', 'Oil & Gas', 'Real Estate', 'Hospitality', 'Nonprofit', 'Government', 'Other'];
+
+const INDUSTRY_COLORS = {
+  Technology:    'bg-blue-900/40 text-blue-300 border-blue-800/50',
+  Healthcare:    'bg-red-900/40 text-red-300 border-red-800/50',
+  Legal:         'bg-amber-900/40 text-amber-300 border-amber-800/50',
+  Education:     'bg-teal-900/40 text-teal-300 border-teal-800/50',
+  Finance:       'bg-emerald-900/40 text-emerald-300 border-emerald-800/50',
+  Retail:        'bg-orange-900/40 text-orange-300 border-orange-800/50',
+  Manufacturing: 'bg-slate-800/80 text-slate-300 border-slate-700/50',
+  'Oil & Gas':   'bg-yellow-900/40 text-yellow-300 border-yellow-800/50',
+  'Real Estate': 'bg-indigo-900/40 text-indigo-300 border-indigo-800/50',
+  Hospitality:   'bg-purple-900/40 text-purple-300 border-purple-800/50',
+  Nonprofit:     'bg-pine-900/60 text-pine-300 border-pine-800/50',
+  Government:    'bg-blue-950/60 text-blue-400 border-blue-900/50',
+};
 const EMPLOYEE_COUNTS = ['1–10', '11–50', '51–200', '201–500', '500+'];
 const IT_STAFF_COUNTS = ['Just me', '2–3', '4–10', '10+'];
 const OS_OPTIONS = ['Windows', 'macOS', 'Linux'];
@@ -134,11 +149,16 @@ export default function CompanyProfile() {
     <div className="max-w-2xl space-y-6 animate-fadeIn">
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-0.5">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
             <h1 className="text-2xl font-bold text-white">Company Profile</h1>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-pine-900/60 text-pine-300 border border-pine-800/50 font-medium uppercase tracking-wider">
               ATLAS context
             </span>
+            {form.industry && INDUSTRY_COLORS[form.industry] && (
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border uppercase tracking-wider ${INDUSTRY_COLORS[form.industry]}`}>
+                {form.industry} Mode
+              </span>
+            )}
           </div>
           <p className="text-sm text-gray-500">ATLAS reads this before every response to give environment-specific advice.</p>
         </div>

@@ -5,7 +5,7 @@ import api from '../../api/client.js';
 
 const TOTAL_STEPS = 5;
 
-const INDUSTRIES = ['Technology', 'Healthcare', 'Finance', 'Legal', 'Education', 'Retail', 'Manufacturing', 'Real Estate', 'Nonprofit', 'Government', 'Other'];
+const INDUSTRIES = ['Technology', 'Healthcare', 'Legal', 'Education', 'Finance', 'Retail', 'Manufacturing', 'Oil & Gas', 'Real Estate', 'Hospitality', 'Nonprofit', 'Government', 'Other'];
 const EMPLOYEE_COUNTS = ['1–10', '11–50', '51–200', '201–500', '500+'];
 const IT_STAFF_COUNTS = ['Just me', '2–3', '4–10', '10+'];
 const OS_OPTIONS = ['Windows', 'macOS', 'Linux'];
