@@ -5,7 +5,7 @@ import * as gws from '../services/googleWorkspace.js';
 import { sendGoogleTempPassword } from '../services/email.js';
 
 const router = express.Router();
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173';
+const CLIENT_URL = process.env.CLIENT_URL || 'https://sentinel-eta-woad.vercel.app';
 
 // ─── OAUTH FLOW ───────────────────────────────────────────────────────────────
 
