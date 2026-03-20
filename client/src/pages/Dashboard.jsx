@@ -201,9 +201,20 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]   = useState(null);
 
   useEffect(() => {
-    api.get('/dashboard').then(r => setStats(r.data)).finally(() => setLoading(false));
+    console.log('[Dashboard] fetching /dashboard for role:', user?.role);
+    api.get('/dashboard')
+      .then(r => {
+        console.log('[Dashboard] response:', r.status, r.data);
+        setStats(r.data);
+      })
+      .catch(err => {
+        console.error('[Dashboard] error:', err.response?.status, err.response?.data, err.message);
+        setError(err.response?.data?.error || err.message);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const ticketsLink = user.role === 'employee' ? '/my-tickets' : '/tickets';
@@ -220,6 +231,19 @@ export default function Dashboard() {
           <SkeletonCard className="lg:col-span-2" />
           <SkeletonCard />
         </div>
+      </div>
+    );
+  }
+
+  if (error || !stats) {
+    return (
+      <div className="card p-8 text-center space-y-2">
+        <p className="text-red-400 font-medium text-sm">Failed to load dashboard</p>
+        <p className="text-gray-600 text-xs font-mono">{error || 'No data returned'}</p>
+        <p className="text-gray-700 text-xs mt-2">Check the browser console and Railway logs for details.</p>
+        <button onClick={() => window.location.reload()} className="btn-secondary px-4 py-2 text-xs mt-2">
+          Retry
+        </button>
       </div>
     );
   }
