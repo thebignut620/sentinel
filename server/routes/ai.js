@@ -342,8 +342,8 @@ ${problem}`,
     // A response is considered self-serviceable if ATLAS provided substantive troubleshooting.
     const resolved = suggestion.length > 150;
 
-    // Compute confidence from top matched solution
-    let confidence = null;
+    // Compute confidence — always present, even when no learned solutions exist yet
+    let confidence = { level: 'new', count: 0, rate: 0 };
     if (matchedSolutionIds.length > 0) {
       try {
         const topSol = await db.get(
@@ -356,13 +356,16 @@ ${problem}`,
             confidence = { level: 'high', count: topSol.tried_count, rate };
           } else if (topSol.tried_count >= 3) {
             confidence = { level: 'medium', count: topSol.tried_count, rate };
-          } else if (topSol.tried_count >= 1) {
+          } else {
             confidence = { level: 'low', count: topSol.tried_count, rate };
           }
         }
-      } catch {}
+      } catch (e) {
+        console.error('[ATLAS] confidence compute error:', e.message);
+      }
     }
 
+    console.log('[ATLAS] final response — suggestion length:', suggestion.length, '| matched_solution_ids:', matchedSolutionIds, '| confidence:', confidence);
     res.json({ resolved, suggestion, matched_solution_ids: matchedSolutionIds, confidence });
   } catch (err) {
     console.error('[ATLAS] assist error:', err.message);

@@ -8,6 +8,40 @@ import api from '../../api/client.js';
 const STEPS = { INPUT: 'input', THINKING: 'thinking', SOLUTION: 'solution', KB: 'kb', TICKET: 'ticket', DONE: 'done' };
 const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
 
+function ConfidenceBadge({ confidence }) {
+  const level = confidence?.level ?? 'new';
+  const count = confidence?.count ?? 0;
+  const rate  = confidence?.rate  ?? 0;
+
+  if (level === 'high') {
+    return (
+      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border bg-pine-900/50 text-pine-300 border-pine-700/50 shrink-0">
+        ✓ {rate}% success · {count} verified
+      </span>
+    );
+  }
+  if (level === 'medium') {
+    return (
+      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border bg-blue-900/40 text-blue-300 border-blue-800/50 shrink-0">
+        ~ {count} verified case{count !== 1 ? 's' : ''}
+      </span>
+    );
+  }
+  if (level === 'low') {
+    return (
+      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border bg-gray-800 text-gray-500 border-gray-700 shrink-0">
+        {count} attempt{count !== 1 ? 's' : ''} · learning
+      </span>
+    );
+  }
+  // 'new' — no learned solutions yet for this problem
+  return (
+    <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border bg-gray-800/60 text-gray-600 border-gray-700/50 shrink-0">
+      New pattern
+    </span>
+  );
+}
+
 function KBSuggestion({ article, onDismiss }) {
   const steps = article.steps
     ? (typeof article.steps === 'string' ? JSON.parse(article.steps) : article.steps)
@@ -74,10 +108,15 @@ export default function AIHelpFlow() {
     setError('');
     try {
       const res = await api.post('/ai/assist', { problem });
+      console.log('[ATLAS frontend] response:', JSON.stringify({
+        suggestion_length: res.data.suggestion?.length ?? 0,
+        matched_solution_ids: res.data.matched_solution_ids,
+        confidence: res.data.confidence,
+      }, null, 2));
       setAiResult(res.data);
       setStep(STEPS.SOLUTION);
     } catch (err) {
-      setAiResult({ resolved: false, suggestion: null });
+      setAiResult({ resolved: false, suggestion: null, confidence: { level: 'new', count: 0, rate: 0 } });
       setError(err.response?.data?.error || 'ATLAS is temporarily offline. You can still submit a ticket below.');
       setStep(STEPS.SOLUTION);
     }
@@ -180,21 +219,7 @@ export default function AIHelpFlow() {
             <div className="flex items-center gap-2 mb-3">
               <div className="h-6 w-6 rounded-full bg-pine-900/60 border border-pine-800/50 flex items-center justify-center text-xs font-bold text-pine-300">A</div>
               <span className="font-semibold text-pine-300">ATLAS Diagnosis</span>
-              {aiResult?.confidence && (
-                <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-medium border
-                  ${aiResult.confidence.level === 'high'
-                    ? 'bg-pine-900/50 text-pine-300 border-pine-700/50'
-                    : aiResult.confidence.level === 'medium'
-                    ? 'bg-blue-900/40 text-blue-300 border-blue-800/50'
-                    : 'bg-gray-800 text-gray-500 border-gray-700'
-                  }`}>
-                  {aiResult.confidence.level === 'high'
-                    ? `✓ ${aiResult.confidence.rate}% success · ${aiResult.confidence.count} verified`
-                    : aiResult.confidence.level === 'medium'
-                    ? `~ ${aiResult.confidence.count} verified cases`
-                    : 'New pattern'}
-                </span>
-              )}
+              <ConfidenceBadge confidence={aiResult?.confidence} />
             </div>
 
             {aiResult?.suggestion ? (
