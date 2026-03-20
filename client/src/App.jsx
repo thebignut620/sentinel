@@ -22,6 +22,7 @@ import UserManagement from './pages/admin/UserManagement.jsx';
 import AdminSettings from './pages/admin/AdminSettings.jsx';
 import OnboardingWizard from './pages/admin/OnboardingWizard.jsx';
 import CompanyProfile from './pages/admin/CompanyProfile.jsx';
+import Integrations from './pages/admin/Integrations.jsx';
 import api from './api/client.js';
 
 function RootRedirect() {
@@ -162,6 +163,14 @@ function AppInner() {
             element={
               <ProtectedRoute roles={['admin']}>
                 <AdminSettings />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/integrations"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <Integrations />
               </ProtectedRoute>
             }
           />

@@ -76,6 +76,12 @@ const ICONS = {
         d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
     </svg>
   ),
+  plug: (
+    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  ),
 };
 
 function NavLink({ to, icon, label, collapsed }) {
@@ -160,6 +166,7 @@ export default function Layout() {
       { to: '/knowledge-base',        icon: ICONS.kb,        label: 'Knowledge Base' },
       { to: '/admin/users',           icon: ICONS.users,     label: 'User Management' },
       { to: '/admin/company-profile', icon: ICONS.building,  label: 'Company Profile' },
+      { to: '/admin/integrations',    icon: ICONS.plug,      label: 'Integrations' },
       { to: '/admin/settings',        icon: ICONS.settings,  label: 'Settings' },
     ],
   };

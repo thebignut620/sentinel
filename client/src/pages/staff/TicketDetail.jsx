@@ -10,6 +10,191 @@ import SpinnerButton from '../../components/SpinnerButton.jsx';
 import SentimentBadge from '../../components/SentimentBadge.jsx';
 import api from '../../api/client.js';
 
+// ── ATLAS Action Approval Card ────────────────────────────────────────────────
+const ACTION_LABELS = {
+  password_reset: 'Reset Google Workspace Password',
+  account_unlock: 'Unlock Google Workspace Account',
+  access_grant:   'Grant Google Drive Access',
+};
+const ACTION_ICONS = { password_reset: '🔑', account_unlock: '🔓', access_grant: '📂' };
+const DRIVE_ROLES  = ['reader', 'commenter', 'writer'];
+
+function AtlasActionCard({ action, onApprove, onDeny, loading }) {
+  const [driveId, setDriveId]   = useState('');
+  const [driveRole, setDriveRole] = useState('reader');
+  const [saving, setSaving]     = useState(false);
+  const needsDriveId = action.action_type === 'access_grant';
+  const details = JSON.parse(action.details || '{}');
+  const hasDriveId = !!(details.drive_id);
+
+  const handleSaveDriveId = async () => {
+    if (!driveId.trim()) return;
+    setSaving(true);
+    try {
+      await api.patch(`/integrations/actions/${action.id}`, { drive_id: driveId.trim(), role: driveRole });
+      onApprove(action.id, true);
+    } catch { setSaving(false); }
+  };
+
+  return (
+    <div className="rounded-xl border border-blue-800/50 bg-blue-900/20 p-4 space-y-3">
+      <div className="flex items-start gap-3">
+        <div className="h-8 w-8 rounded-full bg-blue-900/60 border border-blue-800/50 flex items-center justify-center text-base shrink-0">
+          {ACTION_ICONS[action.action_type]}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-900/60 text-blue-300 border border-blue-800/50 font-medium">
+              ATLAS Action
+            </span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-900/40 text-amber-300 border border-amber-800/50">
+              Awaiting approval
+            </span>
+          </div>
+          <p className="text-sm font-semibold text-white mt-1">{ACTION_LABELS[action.action_type]}</p>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Target: <span className="text-gray-300 font-medium">{action.target_email}</span>
+            {action.target_name && <> ({action.target_name})</>}
+          </p>
+        </div>
+      </div>
+
+      {needsDriveId && !hasDriveId && (
+        <div className="space-y-2 pt-1">
+          <p className="text-xs text-gray-400">Enter the Google Drive folder ID before approving:</p>
+          <input
+            className="input w-full text-xs"
+            placeholder="Drive folder ID (from URL: /folders/[ID])"
+            value={driveId}
+            onChange={e => setDriveId(e.target.value)}
+          />
+          <select className="input w-full text-xs" value={driveRole} onChange={e => setDriveRole(e.target.value)}>
+            {DRIVE_ROLES.map(r => <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <SpinnerButton loading={saving} onClick={handleSaveDriveId} disabled={!driveId.trim() || saving} className="btn-primary px-3 py-1.5 text-xs">
+              Approve & Execute
+            </SpinnerButton>
+            <button onClick={() => onDeny(action.id)} disabled={loading} className="px-3 py-1.5 rounded-lg text-xs bg-gray-800 border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-50">
+              Deny
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(!needsDriveId || hasDriveId) && (
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={() => onApprove(action.id)}
+            disabled={loading}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-pine-800/60 border border-pine-700/50 text-pine-200 hover:bg-pine-700/60 transition-colors disabled:opacity-50"
+          >
+            ✓ Approve & Execute
+          </button>
+          <button
+            onClick={() => onDeny(action.id)}
+            disabled={loading}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-medium bg-gray-800 border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition-colors disabled:opacity-50"
+          >
+            ✕ Deny
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AtlasActionResult({ action }) {
+  const statusColors = {
+    executed: 'text-pine-300 bg-pine-900/30 border-pine-800/40',
+    denied:   'text-gray-500 bg-gray-800/40 border-gray-700/30',
+    failed:   'text-red-300 bg-red-900/20 border-red-800/30',
+  };
+  const icon = { executed: '✓', denied: '✕', failed: '⚠' };
+  return (
+    <div className={`rounded-xl border p-3 text-xs ${statusColors[action.status] || ''}`}>
+      <span className="font-semibold">{icon[action.status]} {ACTION_LABELS[action.action_type]}</span>
+      {action.result && <p className="mt-0.5 opacity-80">{action.result}</p>}
+      {action.error_message && <p className="mt-0.5 opacity-80">Error: {action.error_message}</p>}
+    </div>
+  );
+}
+
+// ── Google Workspace Context Panel ────────────────────────────────────────────
+function GoogleContextPanel({ email }) {
+  const [ctx, setCtx]       = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!email) { setLoading(false); return; }
+    api.get(`/integrations/user-context?email=${encodeURIComponent(email)}`)
+      .then(r => setCtx(r.data))
+      .catch(() => setCtx(null))
+      .finally(() => setLoading(false));
+  }, [email]);
+
+  if (loading) return <div className="skeleton h-24 rounded-xl" />;
+  if (!ctx || !ctx.found) return null;
+
+  return (
+    <div className="card p-4 space-y-2.5">
+      <div className="flex items-center gap-2">
+        <svg viewBox="0 0 48 48" className="w-3.5 h-3.5 shrink-0">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Google Workspace</h3>
+        {ctx.suspended ? (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-red-900/40 text-red-300 border border-red-800/40">Suspended</span>
+        ) : (
+          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-pine-900/40 text-pine-300 border border-pine-800/40">Active</span>
+        )}
+      </div>
+
+      <div className="space-y-1.5 text-xs">
+        {ctx.org_unit && (
+          <div className="flex justify-between">
+            <span className="text-gray-600">Org unit</span>
+            <span className="text-gray-400 text-right max-w-[60%] truncate">{ctx.org_unit}</span>
+          </div>
+        )}
+        {ctx.last_login && (
+          <div className="flex justify-between">
+            <span className="text-gray-600">Last login</span>
+            <span className="text-gray-400">{new Date(ctx.last_login).toLocaleDateString()}</span>
+          </div>
+        )}
+        {ctx.is_admin && (
+          <div className="flex justify-between">
+            <span className="text-gray-600">Role</span>
+            <span className="text-amber-400">Admin</span>
+          </div>
+        )}
+      </div>
+
+      {ctx.groups?.length > 0 && (
+        <div>
+          <p className="text-[10px] text-gray-600 font-medium uppercase tracking-wider mb-1.5">Groups</p>
+          <div className="flex flex-wrap gap-1">
+            {ctx.groups.slice(0, 4).map(g => (
+              <span key={g} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-500 truncate max-w-[120px]">
+                {g.split('@')[0]}
+              </span>
+            ))}
+            {ctx.groups.length > 4 && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-800 border border-gray-700 text-gray-600">
+                +{ctx.groups.length - 4}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SERVER = api.defaults.baseURL.replace('/api', '');
 
 const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
@@ -261,6 +446,7 @@ export default function TicketDetail() {
   const [editAssignee, setEditAssignee] = useState('');
   const [solution,     setSolution]     = useState('');
   const [empProfile,   setEmpProfile]   = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     loadAll();
@@ -317,6 +503,32 @@ export default function TicketDetail() {
       addToast(err.response?.data?.error || 'Update failed', 'error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleApproveAction = async (actionId, alreadySavedDriveId = false) => {
+    setActionLoading(true);
+    try {
+      await api.post(`/integrations/actions/${actionId}/approve`);
+      addToast('ATLAS action executed successfully', 'success');
+      await loadAll();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Action failed', 'error');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDenyAction = async (actionId) => {
+    setActionLoading(true);
+    try {
+      await api.post(`/integrations/actions/${actionId}/deny`);
+      addToast('Action denied. Manual steps added to notes.', 'info');
+      await loadAll();
+    } catch (err) {
+      addToast(err.response?.data?.error || 'Failed', 'error');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -444,6 +656,29 @@ export default function TicketDetail() {
               </div>
             )}
           </div>
+
+          {/* ATLAS Action Cards */}
+          {canManage && ticket.pending_actions?.length > 0 && (
+            <div className="card p-5 space-y-3" style={{ borderColor: 'rgba(59,130,246,0.3)' }}>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-900/60 text-blue-300 border border-blue-800/50 font-medium">ATLAS</span>
+                <h2 className="text-sm font-semibold text-blue-300">Automated Actions</h2>
+              </div>
+              {ticket.pending_actions.map(action => (
+                action.status === 'pending' ? (
+                  <AtlasActionCard
+                    key={action.id}
+                    action={action}
+                    onApprove={handleApproveAction}
+                    onDeny={handleDenyAction}
+                    loading={actionLoading}
+                  />
+                ) : (
+                  <AtlasActionResult key={action.id} action={action} />
+                )
+              ))}
+            </div>
+          )}
 
           {/* Attachments */}
           <div className="card p-5">
@@ -672,6 +907,11 @@ export default function TicketDetail() {
                 <p className="text-[10px] text-gray-600 pt-1 border-t border-gray-800 leading-relaxed">{empProfile.notes}</p>
               )}
             </div>
+          )}
+
+          {/* Google Workspace context */}
+          {canManage && ticket.submitter_email && (
+            <GoogleContextPanel email={ticket.submitter_email} />
           )}
 
           {/* Activity timeline */}

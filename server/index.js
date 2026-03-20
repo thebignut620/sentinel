@@ -14,6 +14,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import kbRoutes from './routes/knowledge-base.js';
 import companyProfileRoutes from './routes/company-profile.js';
 import employeeProfileRoutes from './routes/employee-profiles.js';
+import integrationRoutes from './routes/integrations.js';
 import { authenticate } from './middleware/auth.js';
 import { startCronJobs } from './services/cron.js';
 
@@ -43,6 +44,7 @@ app.use('/api/dashboard', authenticate, dashboardRoutes);
 app.use('/api/knowledge-base', authenticate, kbRoutes);
 app.use('/api/company-profile', companyProfileRoutes);
 app.use('/api/employee-profiles', authenticate, employeeProfileRoutes);
+app.use('/api/integrations', integrationRoutes);
 app.use('/api', authenticate, uploadRoutes);
 
 // Error handler

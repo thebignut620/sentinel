@@ -146,6 +146,33 @@ export async function runMigrations() {
       created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    `CREATE TABLE IF NOT EXISTS integrations (
+      id            SERIAL PRIMARY KEY,
+      provider      TEXT NOT NULL DEFAULT 'google',
+      access_token  TEXT,
+      refresh_token TEXT,
+      token_expiry  TIMESTAMPTZ,
+      connected_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      connected_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_sync_at  TIMESTAMPTZ,
+      is_active     INTEGER NOT NULL DEFAULT 1
+    )`,
+    `CREATE TABLE IF NOT EXISTS atlas_actions (
+      id            SERIAL PRIMARY KEY,
+      ticket_id     INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      action_type   TEXT NOT NULL CHECK(action_type IN ('password_reset','account_unlock','access_grant')),
+      target_email  TEXT NOT NULL,
+      target_name   TEXT,
+      details       TEXT,
+      status        TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','approved','denied','executed','failed')),
+      requested_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      approved_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      approved_at   TIMESTAMPTZ,
+      executed_at   TIMESTAMPTZ,
+      result        TEXT,
+      error_message TEXT
+    )`,
   ];
 
   for (const sql of tables) {

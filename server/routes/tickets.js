@@ -3,6 +3,7 @@ import db from '../db/connection.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { sendTicketStatusEmail } from '../services/email.js';
 import * as atlas from '../services/atlas.js';
+import { detectActionType, getIntegration } from '../services/googleWorkspace.js';
 
 const router = express.Router();
 
@@ -92,7 +93,7 @@ router.get('/:id/related', authenticate, async (req, res) => {
 // Get single ticket with comments, notes, attachments
 router.get('/:id', authenticate, async (req, res) => {
   const ticket = await db.get(`
-    SELECT t.*, u.name as submitter_name, a.name as assignee_name
+    SELECT t.*, u.name as submitter_name, u.email as submitter_email, a.name as assignee_name
     FROM tickets t
     JOIN users u ON t.submitter_id = u.id
     LEFT JOIN users a ON t.assignee_id = a.id
@@ -129,7 +130,16 @@ router.get('/:id', authenticate, async (req, res) => {
     req.params.id
   );
 
-  res.json({ ...ticket, comments, notes, attachments });
+  // Pending ATLAS actions for this ticket (staff/admin only)
+  let pending_actions = [];
+  if (req.user.role !== 'employee') {
+    pending_actions = await db.all(
+      "SELECT * FROM atlas_actions WHERE ticket_id = ? ORDER BY requested_at DESC",
+      req.params.id
+    );
+  }
+
+  res.json({ ...ticket, comments, notes, attachments, pending_actions });
 });
 
 // Create ticket
@@ -191,6 +201,27 @@ router.post('/', authenticate, async (req, res) => {
       }
     } catch (e) {
       console.error('[ATLAS] background suggestions error:', e.message);
+    }
+  });
+
+  // ── Google Workspace: detect actionable tickets and create pending atlas_action
+  setImmediate(async () => {
+    try {
+      const integration = await getIntegration();
+      if (!integration) return;
+      const actionType = detectActionType(title.trim(), description.trim());
+      if (!actionType) return;
+      await db.run(
+        `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details)
+         VALUES (?, ?, ?, ?, ?)`,
+        ticket.id,
+        actionType,
+        req.user.email,
+        req.user.name,
+        actionType === 'access_grant' ? JSON.stringify({ drive_id: '', role: 'reader' }) : null,
+      );
+    } catch (e) {
+      console.error('[ATLAS] Google action detection error:', e.message);
     }
   });
 
