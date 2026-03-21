@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router = express.Router();
-const anthropic = new Anthropic();
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // GET /api/ticket-templates — list all templates
 router.get('/', authenticate, async (req, res) => {
@@ -23,7 +23,7 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // POST /api/ticket-templates — create template (it_staff+)
-router.post('/', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
+router.post('/', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { name, category, body } = req.body;
   if (!name || !body) return res.status(400).json({ error: 'name and body required' });
   try {
@@ -31,7 +31,7 @@ router.post('/', authenticate, requireRole(['it_staff', 'admin']), async (req, r
       `INSERT INTO ticket_templates (name, category, body, created_by) VALUES (?, ?, ?, ?)`,
       name, category || null, body, req.user.id
     );
-    res.status(201).json({ id: result.lastID || result.id });
+    res.status(201).json({ id: result.lastInsertRowid });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to create template' });
@@ -39,7 +39,7 @@ router.post('/', authenticate, requireRole(['it_staff', 'admin']), async (req, r
 });
 
 // PUT /api/ticket-templates/:id — update template (it_staff+)
-router.put('/:id', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
+router.put('/:id', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { name, category, body } = req.body;
   try {
     await db.run(
@@ -54,7 +54,7 @@ router.put('/:id', authenticate, requireRole(['it_staff', 'admin']), async (req,
 });
 
 // DELETE /api/ticket-templates/:id — delete template (it_staff+)
-router.delete('/:id', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
+router.delete('/:id', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   try {
     await db.run(`DELETE FROM ticket_templates WHERE id = ?`, req.params.id);
     res.json({ success: true });
@@ -92,7 +92,7 @@ router.post('/suggest', authenticate, async (req, res) => {
     ).join('\n');
 
     const message = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 256,
       messages: [{
         role: 'user',

@@ -60,7 +60,7 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // POST /api/clusters/:id/bulk-resolve — bulk resolve all tickets in a cluster (it_staff+)
-router.post('/:id/bulk-resolve', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
+router.post('/:id/bulk-resolve', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { resolution } = req.body;
   const { id } = req.params;
 
@@ -102,7 +102,7 @@ router.post('/:id/bulk-resolve', authenticate, requireRole(['it_staff', 'admin']
 });
 
 // POST /api/clusters/analyze — ATLAS groups open tickets into clusters
-router.post('/analyze', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
+router.post('/analyze', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const MODEL = 'claude-sonnet-4-20250514';
   const keyPreview = process.env.ANTHROPIC_API_KEY
     ? process.env.ANTHROPIC_API_KEY.slice(0, 10) + '...'
