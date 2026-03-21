@@ -35,6 +35,7 @@ import incidentRoutes from './routes/incidents.js';
 import notificationRoutes from './routes/notifications.js';
 import ticketTemplateRoutes from './routes/ticket-templates.js';
 import clusterRoutes from './routes/clusters.js';
+import billingRoutes from './routes/billing.js';
 import { authenticate } from './middleware/auth.js';
 import { startCronJobs } from './services/cron.js';
 
@@ -51,6 +52,10 @@ const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
   .map(o => o.trim())
   .filter(Boolean);
 app.use(cors({ origin: allowedOrigins }));
+
+// Stripe webhook needs raw body — must be registered BEFORE express.json()
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json());
 
 // Serve uploaded files
@@ -90,6 +95,9 @@ app.use('/api/jira', jiraRoutes);
 
 // Phase 5 — Analytics
 app.use('/api/analytics', analyticsRoutes);
+
+// Billing
+app.use('/api/billing', billingRoutes);
 
 // Phase 6 routes
 app.use('/api/incidents', incidentRoutes);

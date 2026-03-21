@@ -9,7 +9,12 @@ import OfflineBanner from './components/OfflineBanner.jsx';
 import MaintenanceBanner from './components/MaintenanceBanner.jsx';
 import NavProgress from './components/NavProgress.jsx';
 import WelcomeModal from './components/WelcomeModal.jsx';
+import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
+import Signup from './pages/Signup.jsx';
+import Pricing from './pages/Pricing.jsx';
+import Privacy from './pages/Privacy.jsx';
+import Terms from './pages/Terms.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
 import NotFound from './pages/NotFound.jsx';
 import KnowledgeBase from './pages/KnowledgeBase.jsx';
@@ -38,11 +43,16 @@ import Analytics from './pages/admin/Analytics.jsx';
 import SurveyFeedback from './pages/SurveyFeedback.jsx';
 import Templates from './pages/admin/Templates.jsx';
 import Clusters from './pages/admin/Clusters.jsx';
+import Billing from './pages/admin/Billing.jsx';
 import NotificationPreferences from './pages/NotificationPreferences.jsx';
 import api from './api/client.js';
 
-function RootRedirect() {
-  return <Navigate to="/dashboard" replace />;
+// Root: Landing for guests, redirect to dashboard for authenticated users
+function LandingOrDashboard() {
+  const { user, loading } = useAuth();
+  if (loading) return <AppLoader />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <Landing />;
 }
 
 // Handles the session-expired event fired by the API client
@@ -117,7 +127,15 @@ function AppInner() {
       <WelcomeGate />
       <OnboardingGate />
       <Routes>
+        {/* Root: Landing for guests */}
+        <Route path="/" element={<LandingOrDashboard />} />
+
+        {/* Public pages */}
         <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/pricing" element={<Pricing />} />
+        <Route path="/privacy" element={<Privacy />} />
+        <Route path="/terms" element={<Terms />} />
         <Route path="/sso-callback" element={<SsoCallback />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/api-docs" element={<ApiDocs />} />
@@ -133,15 +151,8 @@ function AppInner() {
           }
         />
 
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<RootRedirect />} />
+        {/* Protected app routes with Layout sidebar */}
+        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="dashboard" element={<Dashboard />} />
 
           {/* Employee */}
@@ -162,127 +173,23 @@ function AppInner() {
           <Route path="tickets/:id" element={<TicketDetail />} />
 
           {/* Admin only */}
-          <Route
-            path="admin/users"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <UserManagement />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/company-profile"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <CompanyProfile />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/settings"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <AdminSettings />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/integrations"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <Integrations />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/departments"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <Departments />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/assets"
-            element={
-              <ProtectedRoute roles={['it_staff', 'admin']}>
-                <Assets />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/maintenance"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <Maintenance />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/custom-fields"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <CustomFields />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/audit-log"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <AuditLog />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/permissions"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <Permissions />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="settings/2fa" element={<TwoFactorSetup />} />
-          <Route
-            path="admin/api-keys"
-            element={
-              <ProtectedRoute roles={['admin']}>
-                <ApiKeys />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/analytics"
-            element={
-              <ProtectedRoute roles={['admin', 'it_staff']}>
-                <Analytics />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/templates"
-            element={
-              <ProtectedRoute roles={['admin', 'it_staff']}>
-                <Templates />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="admin/clusters"
-            element={
-              <ProtectedRoute roles={['admin', 'it_staff']}>
-                <Clusters />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="notification-preferences"
-            element={
-              <ProtectedRoute>
-                <NotificationPreferences />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="admin/users"           element={<ProtectedRoute roles={['admin']}><UserManagement /></ProtectedRoute>} />
+          <Route path="admin/company-profile" element={<ProtectedRoute roles={['admin']}><CompanyProfile /></ProtectedRoute>} />
+          <Route path="admin/settings"        element={<ProtectedRoute roles={['admin']}><AdminSettings /></ProtectedRoute>} />
+          <Route path="admin/integrations"    element={<ProtectedRoute roles={['admin']}><Integrations /></ProtectedRoute>} />
+          <Route path="admin/departments"     element={<ProtectedRoute roles={['admin']}><Departments /></ProtectedRoute>} />
+          <Route path="admin/assets"          element={<ProtectedRoute roles={['it_staff', 'admin']}><Assets /></ProtectedRoute>} />
+          <Route path="admin/maintenance"     element={<ProtectedRoute roles={['admin']}><Maintenance /></ProtectedRoute>} />
+          <Route path="admin/custom-fields"   element={<ProtectedRoute roles={['admin']}><CustomFields /></ProtectedRoute>} />
+          <Route path="admin/audit-log"       element={<ProtectedRoute roles={['admin']}><AuditLog /></ProtectedRoute>} />
+          <Route path="admin/permissions"     element={<ProtectedRoute roles={['admin']}><Permissions /></ProtectedRoute>} />
+          <Route path="admin/api-keys"        element={<ProtectedRoute roles={['admin']}><ApiKeys /></ProtectedRoute>} />
+          <Route path="admin/analytics"       element={<ProtectedRoute roles={['admin', 'it_staff']}><Analytics /></ProtectedRoute>} />
+          <Route path="admin/templates"       element={<ProtectedRoute roles={['admin', 'it_staff']}><Templates /></ProtectedRoute>} />
+          <Route path="admin/clusters"        element={<ProtectedRoute roles={['admin', 'it_staff']}><Clusters /></ProtectedRoute>} />
+          <Route path="admin/billing"         element={<ProtectedRoute roles={['admin']}><Billing /></ProtectedRoute>} />
+          <Route path="settings/2fa"          element={<TwoFactorSetup />} />
+          <Route path="notification-preferences" element={<NotificationPreferences />} />
         </Route>
 
         <Route path="*" element={<NotFound />} />

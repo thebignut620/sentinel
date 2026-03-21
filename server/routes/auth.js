@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import speakeasy from 'speakeasy';
 import db from '../db/connection.js';
 import { authenticate } from '../middleware/auth.js';
-import { sendPasswordResetEmail } from '../services/email.js';
+import { sendPasswordResetEmail, sendWelcomeEmail } from '../services/email.js';
 
 const router = express.Router();
 
@@ -94,6 +94,63 @@ router.post('/reset-password', async (req, res) => {
   await db.run('UPDATE password_reset_tokens SET used = 1 WHERE id = ?', row.id);
 
   res.json({ ok: true });
+});
+
+// POST /signup — self-serve company signup, starts 14-day free trial
+router.post('/signup', async (req, res) => {
+  const { companyName, adminName, email, password } = req.body;
+  if (!companyName || !adminName || !email || !password) {
+    return res.status(400).json({ error: 'All fields are required' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  try {
+    const existing = await db.get(`SELECT id FROM users WHERE email = ?`, email.toLowerCase());
+    if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
+
+    const hash = bcrypt.hashSync(password, 10);
+    const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+    const result = await db.run(
+      `INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, 'admin', 1)`,
+      adminName, email.toLowerCase(), hash
+    );
+    const userId = result.lastInsertRowid;
+
+    const seeds = [
+      ['company_name',        companyName],
+      ['subscription_plan',   'trial'],
+      ['subscription_status', 'trialing'],
+      ['trial_ends_at',       trialEnd],
+    ];
+    for (const [key, value] of seeds) {
+      await db.run(
+        `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        key, value
+      );
+    }
+
+    try {
+      await sendWelcomeEmail({ to: email.toLowerCase(), name: adminName, companyName, trialEnd });
+    } catch (e) {
+      console.error('[Signup] welcome email failed:', e.message);
+    }
+
+    const token = jwt.sign(
+      { id: userId, email: email.toLowerCase(), role: 'admin', name: adminName },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
+    res.status(201).json({
+      token,
+      user: { id: userId, name: adminName, email: email.toLowerCase(), role: 'admin' },
+    });
+  } catch (err) {
+    console.error('[Signup] error:', err.message);
+    res.status(500).json({ error: 'Signup failed. Please try again.' });
+  }
 });
 
 export default router;

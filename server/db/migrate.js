@@ -418,6 +418,13 @@ export async function runMigrations() {
     ['atlas_custom_instructions', ''],
     ['weekly_briefing_enabled',   'true'],
     ['health_score_alert_threshold', '70'],
+    // Billing settings (existing deployments start as active)
+    ['subscription_plan',   'active'],
+    ['subscription_status', 'active'],
+    ['trial_ends_at',       ''],
+    ['stripe_customer_id',  ''],
+    ['stripe_subscription_id', ''],
+    ['billing_period_end',  ''],
   ];
   for (const [key, value] of settingSeeds) {
     await db.run(

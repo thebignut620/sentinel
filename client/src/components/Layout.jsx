@@ -5,6 +5,44 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import IncidentBanner from './IncidentBanner.jsx';
 import api from '../api/client.js';
 
+function TrialBanner({ status }) {
+  if (!status || status.status !== 'trialing' || status.isExpired) return null;
+  if (status.trialDaysLeft === null || status.trialDaysLeft > 7) return null;
+  return (
+    <div className="bg-amber-900/40 border-b border-amber-700/50 px-4 py-2 flex items-center justify-between shrink-0">
+      <span className="text-amber-300 text-xs font-medium">
+        ⚡ Trial expires in {status.trialDaysLeft} day{status.trialDaysLeft !== 1 ? 's' : ''}
+      </span>
+      <Link to="/admin/billing" className="text-amber-200 text-xs font-semibold hover:underline shrink-0">
+        Upgrade now →
+      </Link>
+    </div>
+  );
+}
+
+function TrialExpiredScreen() {
+  return (
+    <div className="flex-1 flex items-center justify-center p-6 bg-gray-950">
+      <div className="text-center max-w-md">
+        <div className="w-16 h-16 mx-auto bg-red-900/30 border border-red-700/50 rounded-2xl flex items-center justify-center mb-6">
+          <span className="text-3xl">🔒</span>
+        </div>
+        <h2 className="text-2xl font-bold text-white mb-3">Trial Expired</h2>
+        <p className="text-gray-400 text-sm leading-relaxed mb-6">
+          Your 14-day free trial has ended. Upgrade to a paid plan to restore access to your account and data.
+        </p>
+        <Link
+          to="/admin/billing"
+          className="inline-block px-8 py-3 bg-green-700 hover:bg-green-600 text-white rounded-xl font-semibold transition-colors"
+        >
+          Choose a Plan →
+        </Link>
+        <p className="text-gray-600 text-xs mt-4">Your data is preserved. Upgrade anytime to restore access.</p>
+      </div>
+    </div>
+  );
+}
+
 const ICONS = {
   dashboard: (
     <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -137,6 +175,12 @@ const ICONS = {
         d="M13 10V3L4 14h7v7l9-11h-7z" />
     </svg>
   ),
+  billing: (
+    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+    </svg>
+  ),
 };
 
 function NavLink({ to, icon, label, collapsed }) {
@@ -197,6 +241,8 @@ export default function Layout() {
   });
   const [openTickets, setOpenTickets] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [billingStatus, setBillingStatus] = useState(null);
+  const { pathname } = useLocation();
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', collapsed);
@@ -206,6 +252,13 @@ export default function Layout() {
   useEffect(() => {
     if (user?.role !== 'employee') {
       api.get('/tickets?status=open').then(r => setOpenTickets(r.data.length)).catch(() => {});
+    }
+  }, [user]);
+
+  // Load billing status for admin users (trial banner + lockout)
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      api.get('/billing/status').then(r => setBillingStatus(r.data)).catch(() => {});
     }
   }, [user]);
 
@@ -270,6 +323,7 @@ export default function Layout() {
       { to: '/notification-preferences', icon: ICONS.bell,      label: 'Notifications' },
       { to: '/admin/audit-log',        icon: ICONS.audit,       label: 'Audit Log' },
       { to: '/admin/permissions',      icon: ICONS.shield,      label: 'Permissions' },
+      { to: '/admin/billing',          icon: ICONS.billing,     label: 'Billing' },
     ],
   };
 
@@ -377,9 +431,15 @@ export default function Layout() {
       {/* Main */}
       <main className="flex-1 overflow-auto flex flex-col">
         <IncidentBanner />
-        <div className="flex-1 max-w-6xl mx-auto w-full p-6 page-enter">
-          <Outlet />
-        </div>
+        {user?.role === 'admin' && <TrialBanner status={billingStatus} />}
+        {billingStatus?.isExpired && pathname !== '/admin/billing'
+          ? <TrialExpiredScreen />
+          : (
+            <div className="flex-1 max-w-6xl mx-auto w-full p-6 page-enter">
+              <Outlet />
+            </div>
+          )
+        }
       </main>
     </div>
   );

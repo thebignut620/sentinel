@@ -434,3 +434,48 @@ export async function sendPasswordResetEmail({ to, name, token }) {
     console.error('[email] Failed to send reset email:', err.message);
   }
 }
+
+export async function sendWelcomeEmail({ to, name, companyName, trialEnd }) {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const trialDate = new Date(trialEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const dashUrl = `${BASE_URL}/dashboard`;
+    await transporter.sendMail({
+      from: (await getConfig()).smtp_from || (await getConfig()).smtp_user,
+      to,
+      subject: `Welcome to Sentinel — your 14-day trial has started`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+          <div style="background:#2d6a2d;padding:24px 32px;">
+            <h1 style="margin:0;font-size:22px;color:#fff;">Welcome to Sentinel</h1>
+            <p style="margin:6px 0 0;color:#a7f3a7;font-size:14px;">AI-powered IT helpdesk</p>
+          </div>
+          <div style="padding:32px;">
+            <h2 style="margin-top:0;color:#fff;">Hi ${name}, you're all set!</h2>
+            <p>Your 14-day free trial for <strong>${companyName}</strong> is now active. No credit card required.</p>
+            <div style="background:#1a1a1a;border:1px solid #2d6a2d;border-radius:8px;padding:16px;margin:20px 0;">
+              <p style="margin:0 0 6px;color:#4aaa4a;font-weight:600;">Trial Details</p>
+              <p style="margin:0;font-size:14px;">Expires: <strong>${trialDate}</strong></p>
+              <p style="margin:4px 0 0;font-size:13px;color:#888;">Upgrade anytime to keep access.</p>
+            </div>
+            <p style="margin-bottom:6px;font-weight:600;color:#ccc;">Getting started:</p>
+            <ol style="color:#aaa;font-size:14px;line-height:1.8;padding-left:20px;">
+              <li>Set up your company profile and SMTP email settings</li>
+              <li>Invite your IT staff and employees</li>
+              <li>Submit your first ticket and watch ATLAS analyze it</li>
+            </ol>
+            <a href="${dashUrl}"
+               style="display:inline-block;background:#2d6a2d;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:20px;">
+              Open Dashboard
+            </a>
+            <p style="margin-top:32px;color:#888;font-size:13px;">Questions? Reply to this email and we'll help you get set up.</p>
+            <p style="color:#888;font-size:13px;">— The Sentinel Team</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[email] Failed to send welcome email:', err.message);
+  }
+}
