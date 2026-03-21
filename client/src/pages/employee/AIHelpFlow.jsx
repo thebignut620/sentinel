@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import SmartTextarea from '../../components/SmartTextarea.jsx';
 import SpinnerButton from '../../components/SpinnerButton.jsx';
+import VoiceInput from '../../components/VoiceInput.jsx';
 import api from '../../api/client.js';
 
 const STEPS = { INPUT: 'input', THINKING: 'thinking', SOLUTION: 'solution', KB: 'kb', TICKET: 'ticket', DONE: 'done' };
@@ -226,13 +227,20 @@ export default function AIHelpFlow() {
           maxLength={2000}
         />
         {step === STEPS.INPUT && (
-          <SpinnerButton
-            onClick={handleAskAI}
-            disabled={!problem.trim()}
-            className="btn-primary mt-3 px-5 py-2.5 text-sm"
-          >
-            Ask ATLAS →
-          </SpinnerButton>
+          <div className="flex items-center gap-2 mt-3">
+            <SpinnerButton
+              onClick={handleAskAI}
+              disabled={!problem.trim()}
+              className="btn-primary px-5 py-2.5 text-sm"
+            >
+              Ask ATLAS →
+            </SpinnerButton>
+            <VoiceInput
+              onTranscript={t => setProblem(t)}
+              disabled={step !== STEPS.INPUT}
+            />
+            <span className="text-gray-600 text-xs">or speak your issue</span>
+          </div>
         )}
       </div>
 
@@ -255,6 +263,11 @@ export default function AIHelpFlow() {
               <div className="h-6 w-6 rounded-full bg-pine-900/60 border border-pine-800/50 flex items-center justify-center text-xs font-bold text-pine-300 shrink-0">A</div>
               <span className="font-semibold text-pine-300">ATLAS Diagnosis</span>
               <IndustryBadge industry={aiResult?.industry || pageIndustry} size="sm" />
+              {aiResult?.language && aiResult.language !== 'en' && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-900/40 text-blue-300 border border-blue-800/50 font-medium uppercase tracking-wider shrink-0">
+                  {aiResult.language_name || aiResult.language.toUpperCase()}
+                </span>
+              )}
               <ConfidenceBadge confidence={aiResult?.confidence} />
             </div>
 

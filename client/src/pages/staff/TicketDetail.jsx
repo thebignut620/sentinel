@@ -512,6 +512,9 @@ export default function TicketDetail() {
   const [uploading, setUploading]  = useState(false);
   const [newCommentId, setNewCommentId] = useState(null);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [suggestedTemplates, setSuggestedTemplates] = useState([]);
 
   const [editStatus,   setEditStatus]   = useState('');
   const [editPriority, setEditPriority] = useState('');
@@ -537,12 +540,14 @@ export default function TicketDetail() {
 
   const loadAll = async () => {
     try {
-      const [tRes, hRes] = await Promise.all([
+      const [tRes, hRes, tmplRes] = await Promise.all([
         api.get(`/tickets/${id}`),
         api.get(`/tickets/${id}/history`),
+        api.get('/ticket-templates').catch(() => ({ data: [] })),
       ]);
       setTicket(tRes.data);
       setHistory(hRes.data);
+      setTemplates(tmplRes.data || []);
       setEditStatus(tRes.data.status);
       setEditPriority(tRes.data.priority);
       setEditCategory(tRes.data.category || 'software');
@@ -831,6 +836,43 @@ export default function TicketDetail() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+            {/* Template picker */}
+            {templates.length > 0 && (
+              <div className="mb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTemplates(p => !p)}
+                  className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 mb-1"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h8" /></svg>
+                  {showTemplates ? 'Hide templates' : `Use template (${templates.length})`}
+                </button>
+                {showTemplates && (
+                  <div className="bg-gray-850 border border-gray-700 rounded-lg overflow-hidden max-h-48 overflow-y-auto">
+                    {templates.map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          setComment(t.body);
+                          setShowTemplates(false);
+                          api.post(`/ticket-templates/${t.id}/use`).catch(() => {});
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-700 border-b border-gray-700/50 last:border-0 group"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-white text-xs font-medium group-hover:text-green-400 transition-colors">{t.name}</span>
+                          {t.category && (
+                            <span className="text-gray-600 text-xs capitalize">{t.category}</span>
+                          )}
+                        </div>
+                        <p className="text-gray-500 text-xs mt-0.5 line-clamp-1 font-mono">{t.body}</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <form onSubmit={handleComment} className="space-y-2" ref={commentBoxRef}>

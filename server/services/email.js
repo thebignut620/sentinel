@@ -305,6 +305,101 @@ export async function sendMonthlyReport({ to, name, reportText, stats, pdfBuffer
   }
 }
 
+export async function sendIncidentAlert({ to, name, title, description, category, count, companyName }) {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const cfg = await getConfig();
+    const company = companyName || cfg.company_name || 'Sentinel IT';
+    const appUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
+    await transporter.sendMail({
+      from: cfg.smtp_from || cfg.smtp_user,
+      to,
+      subject: `🚨 [${company}] Incident Alert: ${title}`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+          <div style="background:#7f1d1d;padding:20px 32px;">
+            <h1 style="margin:0;font-size:20px;color:#fff;">🚨 ${company} — Incident Alert</h1>
+          </div>
+          <div style="padding:32px;">
+            <h2 style="margin-top:0;color:#ef4444;">${title}</h2>
+            <p>Hi <strong>${name}</strong>,</p>
+            <p>ATLAS has detected a spike in ${category} tickets that may indicate a system-wide issue.</p>
+            <div style="background:#1a1a1a;border:1px solid #7f1d1d;border-radius:8px;padding:16px;margin:20px 0;">
+              <p style="margin:0 0 8px;"><strong>Category:</strong> ${category}</p>
+              <p style="margin:0 0 8px;"><strong>Tickets in last 2 hours:</strong> ${count}</p>
+              <p style="margin:0;color:#aaa;">${description}</p>
+            </div>
+            <a href="${appUrl}/admin/tickets"
+               style="display:inline-block;background:#7f1d1d;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0;">
+              View Tickets →
+            </a>
+            <p style="color:#888;font-size:13px;">— ${company} ATLAS Monitoring</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[email] Failed to send incident alert:', err.message);
+  }
+}
+
+export async function sendPredictionBriefing({ to, name, briefingText, patterns, companyName }) {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const cfg = await getConfig();
+    const company = companyName || cfg.company_name || 'Sentinel IT';
+    const appUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
+
+    const patternRows = patterns.slice(0, 5).map(p =>
+      `<tr>
+        <td style="padding:8px 12px;text-transform:capitalize;">${p.category}</td>
+        <td style="padding:8px 12px;text-align:center;">${p.cnt}</td>
+        <td style="padding:8px 12px;text-align:center;">${Math.round(p.avg_hours || 0)}h</td>
+      </tr>`
+    ).join('');
+
+    const briefingHtml = briefingText
+      .split('\n\n')
+      .map(p => `<p>${p.trim()}</p>`)
+      .join('');
+
+    await transporter.sendMail({
+      from: cfg.smtp_from || cfg.smtp_user,
+      to,
+      subject: `[${company}] ATLAS Weekly Prevention Briefing`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+          <div style="background:#1e3a5f;padding:20px 32px;">
+            <h1 style="margin:0;font-size:20px;color:#fff;">🔮 ${company} — ATLAS Prevention Briefing</h1>
+          </div>
+          <div style="padding:32px;">
+            <p>Hi <strong>${name}</strong>,</p>
+            <p>Here's your weekly ticket prevention analysis from ATLAS:</p>
+            ${briefingHtml}
+            <h3 style="color:#fff;margin-top:24px;">Top Categories (Last 30 Days)</h3>
+            <table style="width:100%;border-collapse:collapse;background:#1a1a1a;border-radius:8px;overflow:hidden;">
+              <thead>
+                <tr style="background:#111;">
+                  <th style="padding:8px 12px;text-align:left;color:#aaa;">Category</th>
+                  <th style="padding:8px 12px;text-align:center;color:#aaa;">Tickets</th>
+                  <th style="padding:8px 12px;text-align:center;color:#aaa;">Avg Resolve</th>
+                </tr>
+              </thead>
+              <tbody>${patternRows}</tbody>
+            </table>
+            <p style="margin-top:24px;"><a href="${appUrl}/admin/analytics" style="color:#4aaa4a;">View Full Analytics →</a></p>
+            <p style="color:#888;font-size:13px;">— ${company} ATLAS AI System</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[email] Failed to send prediction briefing:', err.message);
+  }
+}
+
 export async function sendPasswordResetEmail({ to, name, token }) {
   try {
     const transporter = await getTransporter();

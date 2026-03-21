@@ -9,7 +9,7 @@ import cron from 'node-cron';
 import db from '../db/connection.js';
 import * as atlas from './atlas.js';
 import { gatherWeeklyStats } from './learning.js';
-import { sendWeeklyReport, sendMonthlyReport } from './email.js';
+import { sendWeeklyReport, sendMonthlyReport, sendIncidentAlert, sendPredictionBriefing } from './email.js';
 import nodemailer from 'nodemailer';
 import { pollEmailInbox } from './emailIngestion.js';
 import { checkCriticalUnassignedTickets } from './pagerduty.js';
@@ -127,6 +127,252 @@ async function runMaintenanceNotifications() {
   }
 }
 
+// ─── PROACTIVE MONITORING ────────────────────────────────────────────────────
+
+async function runProactiveMonitoring() {
+  try {
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+
+    // Find categories with 3+ tickets in last 2 hours
+    const spikes = await db.all(
+      `SELECT category, COUNT(*) as cnt
+       FROM tickets
+       WHERE created_at >= ? AND status NOT IN ('resolved','closed')
+       GROUP BY category
+       HAVING COUNT(*) >= 3`,
+      twoHoursAgo
+    );
+
+    for (const spike of spikes) {
+      // Check if we already have an active incident for this category
+      const existing = await db.get(
+        `SELECT id FROM incidents WHERE category = ? AND status = 'active' AND created_at >= ?`,
+        spike.category, twoHoursAgo
+      );
+      if (existing) continue;
+
+      // Create incident
+      const title = `${spike.category.charAt(0).toUpperCase() + spike.category.slice(1)} Spike Detected`;
+      const description = `${spike.cnt} ${spike.category} tickets submitted in the last 2 hours. Possible system-wide issue.`;
+
+      const result = await db.run(
+        `INSERT INTO incidents (title, description, category) VALUES (?, ?, ?)`,
+        title, description, spike.category
+      );
+      const incidentId = result.lastID || result.id;
+
+      // Create a critical incident ticket
+      const adminUser = await db.get("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
+      if (adminUser) {
+        await db.run(
+          `INSERT INTO tickets (title, description, status, priority, category, submitter_id, ai_attempted)
+           VALUES (?, ?, 'open', 'critical', ?, ?, 0)`,
+          title, description, spike.category, adminUser.id
+        );
+      }
+
+      // Notify all IT staff + admins
+      const staff = await db.all(
+        "SELECT id, name, email FROM users WHERE role IN ('it_staff','admin') AND is_active = 1"
+      );
+
+      const cfg = await getSmtpConfig();
+      const transporter = await getTransporter();
+
+      for (const member of staff) {
+        // In-app notification
+        await db.run(
+          `INSERT INTO notifications (user_id, type, title, body, link)
+           VALUES (?, 'incident', ?, ?, '/admin/incidents')`,
+          member.id, title, description
+        );
+
+        // Email
+        if (transporter) {
+          await sendIncidentAlert({
+            to: member.email,
+            name: member.name,
+            title,
+            description,
+            category: spike.category,
+            count: spike.cnt,
+            companyName: cfg.company_name || 'Sentinel IT',
+          }).catch(() => {});
+        }
+      }
+
+      console.log(`[Proactive Monitor] Incident created: ${title} (id=${incidentId}), notified ${staff.length} staff`);
+    }
+  } catch (e) {
+    console.error('[Proactive Monitor] failed:', e.message);
+  }
+}
+
+// ─── PREDICTIVE TICKET PREVENTION ────────────────────────────────────────────
+
+async function runPredictivePrevention() {
+  try {
+    const aiEnabled = await db.get("SELECT value FROM settings WHERE key = 'ai_enabled'");
+    if (aiEnabled?.value !== 'true') return;
+
+    // Gather patterns from last 30 days
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const patterns = await db.all(
+      `SELECT category, COUNT(*) as cnt, AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_hours
+       FROM tickets
+       WHERE created_at >= ?
+       GROUP BY category
+       ORDER BY cnt DESC`,
+      thirtyDaysAgo
+    );
+
+    const dayOfWeek = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+    const peakDay = await db.all(
+      `SELECT EXTRACT(DOW FROM created_at) as dow, COUNT(*) as cnt
+       FROM tickets WHERE created_at >= ?
+       GROUP BY dow ORDER BY cnt DESC LIMIT 3`,
+      thirtyDaysAgo
+    );
+
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const anthropic = new Anthropic();
+
+    const message = await anthropic.messages.create({
+      model: 'claude-opus-4-6',
+      max_tokens: 800,
+      messages: [{
+        role: 'user',
+        content: `You are an IT operations analyst. Based on the following ticket patterns from the past 30 days, write a brief weekly prevention briefing for the IT team. Include: top 3 actionable prevention recommendations, expected high-volume periods next week, and any quick wins.
+
+Ticket patterns by category:
+${patterns.map(p => `• ${p.category}: ${p.cnt} tickets, avg ${Math.round(p.avg_hours || 0)}h resolution`).join('\n')}
+
+Peak volume days: ${peakDay.map(d => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.dow] + ` (${d.cnt} tickets)`).join(', ')}
+
+Write 3-4 short paragraphs. Be specific and actionable. No fluff.`
+      }]
+    });
+
+    const briefingText = message.content[0].text;
+    const cfg = await getSmtpConfig();
+    const admins = await db.all("SELECT name, email FROM users WHERE role = 'admin' AND is_active = 1");
+
+    for (const admin of admins) {
+      await sendPredictionBriefing({
+        to: admin.email,
+        name: admin.name,
+        briefingText,
+        patterns,
+        companyName: cfg.company_name || 'Sentinel IT',
+      }).catch(() => {});
+    }
+
+    console.log(`[Predictive Cron] Prevention briefing sent to ${admins.length} admin(s)`);
+  } catch (e) {
+    console.error('[Predictive Cron] failed:', e.message);
+  }
+}
+
+// ─── HEALTH SCORE ALERT ────────────────────────────────────────────────────────
+
+async function runHealthScoreAlert() {
+  try {
+    const thresholdRow = await db.get("SELECT value FROM settings WHERE key = 'health_score_alert_threshold'");
+    const threshold = parseInt(thresholdRow?.value || '70');
+
+    // Quick health score calc (resolution rate only for lightweight check)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const total = await db.get(`SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= ?`, thirtyDaysAgo);
+    const resolved = await db.get(
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= ? AND status IN ('resolved','closed')`,
+      thirtyDaysAgo
+    );
+    const resolutionRate = parseInt(total.cnt) > 0
+      ? parseInt(resolved.cnt) / parseInt(total.cnt)
+      : 1;
+
+    // Only alert if resolution rate is extremely low (rough proxy)
+    const estimatedScore = Math.round(resolutionRate * 100 * 0.65); // rough estimate
+    if (estimatedScore >= threshold) return;
+
+    const cfg = await getSmtpConfig();
+    const admins = await db.all("SELECT id, name, email FROM users WHERE role = 'admin' AND is_active = 1");
+
+    for (const admin of admins) {
+      await db.run(
+        `INSERT INTO notifications (user_id, type, title, body, link)
+         VALUES (?, 'health_alert', 'Health Score Warning', ?, '/admin/analytics')`,
+        admin.id,
+        `Sentinel Health Score is critically low (est. ${estimatedScore}/100). Check the Analytics dashboard for details.`
+      );
+    }
+    console.log('[Health Score Cron] Low health score alert sent to admins');
+  } catch (e) {
+    console.error('[Health Score Cron] failed:', e.message);
+  }
+}
+
+// ─── DAILY DIGEST ────────────────────────────────────────────────────────────
+
+async function runDailyDigest() {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const cfg = await getSmtpConfig();
+
+    // Find staff with digest enabled
+    const digestUsers = await db.all(
+      `SELECT u.id, u.name, u.email, np.digest_hour
+       FROM notification_preferences np
+       JOIN users u ON u.id = np.user_id
+       WHERE np.digest_enabled = 1 AND u.is_active = 1`
+    );
+
+    const currentHour = new Date().getUTCHours();
+
+    for (const user of digestUsers) {
+      if (user.digest_hour !== currentHour) continue;
+
+      // Gather unread low-priority notifications
+      const notifs = await db.all(
+        `SELECT * FROM notifications WHERE user_id = ? AND is_read = 0 ORDER BY created_at DESC LIMIT 20`,
+        user.id
+      );
+      if (notifs.length === 0) continue;
+
+      const notifHtml = notifs.map(n =>
+        `<div style="padding:8px 0;border-bottom:1px solid #333;">
+          <strong>${n.title}</strong><br>
+          <span style="color:#aaa;font-size:13px;">${n.body}</span>
+        </div>`
+      ).join('');
+
+      await transporter.sendMail({
+        from: cfg.smtp_from || cfg.smtp_user,
+        to: user.email,
+        subject: `[${cfg.company_name || 'Sentinel IT'}] Your Daily Notification Digest`,
+        html: `
+          <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+            <div style="background:#166534;padding:20px 32px;">
+              <h1 style="margin:0;font-size:20px;color:#fff;">${cfg.company_name || 'Sentinel IT'} — Daily Digest</h1>
+            </div>
+            <div style="padding:32px;">
+              <p>Hi <strong>${user.name}</strong>, here are your ${notifs.length} unread notification${notifs.length !== 1 ? 's' : ''}:</p>
+              ${notifHtml}
+              <p style="margin-top:24px;"><a href="${process.env.CLIENT_URL || 'http://localhost:5173'}" style="color:#4aaa4a;">View in Sentinel →</a></p>
+            </div>
+          </div>
+        `,
+      }).catch(() => {});
+
+      // Mark as read
+      await db.run(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0`, user.id);
+    }
+  } catch (e) {
+    console.error('[Digest Cron] failed:', e.message);
+  }
+}
+
 // ─── EXPORT ───────────────────────────────────────────────────────────────────
 
 export function startCronJobs() {
@@ -201,6 +447,18 @@ export function startCronJobs() {
       console.error('[ATLAS Cron] Monthly report failed:', e.message);
     }
   }, { timezone: 'UTC' });
+
+  // Every 5 minutes — proactive monitoring (spike detection)
+  cron.schedule('*/5 * * * *', runProactiveMonitoring);
+
+  // Every Friday at 5pm UTC — predictive ticket prevention briefing
+  cron.schedule('0 17 * * 5', runPredictivePrevention, { timezone: 'UTC' });
+
+  // Daily at 9am UTC — health score check
+  cron.schedule('0 9 * * *', runHealthScoreAlert, { timezone: 'UTC' });
+
+  // Every hour — daily digest (checks per-user digest_hour preference)
+  cron.schedule('0 * * * *', runDailyDigest);
 
   console.log('✓ ATLAS cron jobs scheduled');
 }

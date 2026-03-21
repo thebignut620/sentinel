@@ -36,6 +36,9 @@ import ApiKeys from './pages/admin/ApiKeys.jsx';
 import ApiDocs from './pages/ApiDocs.jsx';
 import Analytics from './pages/admin/Analytics.jsx';
 import SurveyFeedback from './pages/SurveyFeedback.jsx';
+import Templates from './pages/admin/Templates.jsx';
+import Clusters from './pages/admin/Clusters.jsx';
+import NotificationPreferences from './pages/NotificationPreferences.jsx';
 import api from './api/client.js';
 
 function RootRedirect() {
@@ -253,6 +256,30 @@ function AppInner() {
             element={
               <ProtectedRoute roles={['admin', 'it_staff']}>
                 <Analytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/templates"
+            element={
+              <ProtectedRoute roles={['admin', 'it_staff']}>
+                <Templates />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/clusters"
+            element={
+              <ProtectedRoute roles={['admin', 'it_staff']}>
+                <Clusters />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="notification-preferences"
+            element={
+              <ProtectedRoute>
+                <NotificationPreferences />
               </ProtectedRoute>
             }
           />

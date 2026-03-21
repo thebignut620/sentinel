@@ -572,4 +572,108 @@ router.get('/reports/monthly/:id/pdf', authenticate, async (req, res) => {
   }
 });
 
+// GET /api/analytics/health-score — Sentinel Health Score (0-100)
+router.get('/health-score', authenticate, async (req, res) => {
+  try {
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+
+    // Resolution rate (25 pts): % of tickets resolved/closed in last 30 days
+    const totalTickets = await db.get(
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1`, thirtyDaysAgo
+    );
+    const resolvedTickets = await db.get(
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND status IN ('resolved','closed')`, thirtyDaysAgo
+    );
+    const total = parseInt(totalTickets.cnt) || 0;
+    const resolved = parseInt(resolvedTickets.cnt) || 0;
+    const resolutionRate = total > 0 ? resolved / total : 1;
+    const resolutionScore = Math.round(resolutionRate * 25);
+
+    // Avg resolution time (20 pts): <4h=20, <8h=16, <24h=12, <48h=8, <72h=4, else 0
+    const avgTimeRow = await db.get(
+      `SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_hours
+       FROM tickets WHERE resolved_at IS NOT NULL AND created_at >= $1`, thirtyDaysAgo
+    );
+    const avgHours = parseFloat(avgTimeRow.avg_hours) || 48;
+    let timeScore = 0;
+    if (avgHours <= 4) timeScore = 20;
+    else if (avgHours <= 8) timeScore = 16;
+    else if (avgHours <= 24) timeScore = 12;
+    else if (avgHours <= 48) timeScore = 8;
+    else if (avgHours <= 72) timeScore = 4;
+
+    // Satisfaction (20 pts): based on % thumbs up
+    const satRow = await db.get(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) as positive
+       FROM satisfaction_ratings
+       WHERE submitted_at IS NOT NULL AND sent_at >= $1`, thirtyDaysAgo
+    );
+    const satTotal = parseInt(satRow.total) || 0;
+    const satPositive = parseInt(satRow.positive) || 0;
+    const satRate = satTotal > 0 ? satPositive / satTotal : 0.8;
+    const satScore = Math.round(satRate * 20);
+
+    // ATLAS autonomous rate (15 pts): % of tickets AI handled without escalation
+    const atlasRow = await db.get(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN ai_attempted=1 AND assignee_id IS NULL THEN 1 ELSE 0 END) as autonomous
+       FROM tickets WHERE created_at >= $1`, thirtyDaysAgo
+    );
+    const atlasTotal = parseInt(atlasRow.total) || 0;
+    const atlasAuto = parseInt(atlasRow.autonomous) || 0;
+    const atlasRate = atlasTotal > 0 ? atlasAuto / atlasTotal : 0;
+    const atlasScore = Math.round(atlasRate * 15);
+
+    // Volume trend (10 pts): compare this 30 days vs previous 30 days — stable/decreasing is good
+    const sixtyDaysAgo = new Date(now - 60 * 24 * 60 * 60 * 1000);
+    const prevPeriod = await db.get(
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND created_at < $2`,
+      sixtyDaysAgo, thirtyDaysAgo
+    );
+    const prevTotal = parseInt(prevPeriod.cnt) || total;
+    const trendRatio = prevTotal > 0 ? total / prevTotal : 1;
+    let trendScore = 10;
+    if (trendRatio > 1.3) trendScore = 4;
+    else if (trendRatio > 1.1) trendScore = 7;
+
+    // Recurring issues (10 pts): penalize if any category has >20% of tickets
+    const catRows = await db.all(
+      `SELECT category, COUNT(*) as cnt FROM tickets WHERE created_at >= $1 GROUP BY category`, thirtyDaysAgo
+    );
+    const maxCatPct = total > 0
+      ? Math.max(...catRows.map(r => parseInt(r.cnt) / total))
+      : 0;
+    let recurringScore = 10;
+    if (maxCatPct > 0.5) recurringScore = 2;
+    else if (maxCatPct > 0.35) recurringScore = 5;
+    else if (maxCatPct > 0.25) recurringScore = 8;
+
+    const score = resolutionScore + timeScore + satScore + atlasScore + trendScore + recurringScore;
+
+    let grade = 'A';
+    if (score < 40) grade = 'F';
+    else if (score < 55) grade = 'D';
+    else if (score < 70) grade = 'C';
+    else if (score < 85) grade = 'B';
+
+    res.json({
+      score,
+      grade,
+      breakdown: {
+        resolution: { score: resolutionScore, max: 25, rate: Math.round(resolutionRate * 100) },
+        avgResolutionTime: { score: timeScore, max: 20, hours: Math.round(avgHours * 10) / 10 },
+        satisfaction: { score: satScore, max: 20, rate: Math.round(satRate * 100) },
+        atlasAutonomy: { score: atlasScore, max: 15, rate: Math.round(atlasRate * 100) },
+        volumeTrend: { score: trendScore, max: 10, ratio: Math.round(trendRatio * 100) / 100 },
+        recurringIssues: { score: recurringScore, max: 10, maxCategoryPct: Math.round(maxCatPct * 100) },
+      },
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

@@ -196,6 +196,89 @@ function ActivityFeed({ items }) {
   );
 }
 
+// ── Health Score Widget ────────────────────────────────────────────────────────
+function HealthScoreWidget() {
+  const { token } = useAuth();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    fetch('/api/analytics/health-score', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => setData(d))
+      .catch(() => {});
+  }, [token]);
+
+  if (!data) return null;
+
+  const score = data.score;
+  const color = score >= 85 ? '#4aaa4a' : score >= 70 ? '#fbbf24' : '#ef4444';
+  const bgColor = score >= 85 ? 'border-green-900/60' : score >= 70 ? 'border-amber-900/60' : 'border-red-900/60';
+  const circumference = 2 * Math.PI * 40;
+  const offset = circumference - (score / 100) * circumference;
+
+  return (
+    <div className={`card p-5 border ${bgColor}`}>
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h2 className="font-semibold text-gray-200 text-sm">Sentinel Health Score</h2>
+          <p className="text-xs text-gray-600 mt-0.5">Last 30 days</p>
+        </div>
+        <span className="text-2xl font-bold" style={{ color }}>{score}</span>
+      </div>
+
+      <div className="flex items-center gap-5">
+        <svg width="90" height="90" className="shrink-0">
+          <circle cx="45" cy="45" r="40" fill="none" stroke="#1f2937" strokeWidth="8" />
+          <circle
+            cx="45" cy="45" r="40" fill="none"
+            stroke={color} strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            transform="rotate(-90 45 45)"
+            style={{ transition: 'stroke-dashoffset 1s ease' }}
+          />
+          <text x="45" y="50" textAnchor="middle" fontSize="14" fontWeight="bold" fill={color}>
+            {data.grade}
+          </text>
+        </svg>
+
+        <div className="space-y-1.5 flex-1 text-xs">
+          {Object.entries(data.breakdown).map(([key, b]) => {
+            const labels = {
+              resolution: 'Resolution Rate',
+              avgResolutionTime: 'Response Time',
+              satisfaction: 'Satisfaction',
+              atlasAutonomy: 'ATLAS Rate',
+              volumeTrend: 'Volume Trend',
+              recurringIssues: 'Recurring Issues',
+            };
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <span className="text-gray-500 w-28 shrink-0">{labels[key]}</span>
+                <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${(b.score / b.max) * 100}%`, background: color }}
+                  />
+                </div>
+                <span className="text-gray-400 w-8 text-right">{b.score}/{b.max}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {score < 70 && (
+        <p className="mt-3 text-xs text-red-400 flex items-center gap-1">
+          ⚠️ Health score is below threshold. Check Analytics for details.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth();
@@ -330,6 +413,9 @@ export default function Dashboard() {
           </Link>
         </div>
       )}
+
+      {/* Health Score — admin/staff only */}
+      {user.role !== 'employee' && <HealthScoreWidget />}
 
       {/* Charts + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

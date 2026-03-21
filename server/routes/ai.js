@@ -184,7 +184,18 @@ If someone describes active ransomware, malware spreading across their machine, 
 
 "Stop — disconnect from the network right now (unplug ethernet or turn off WiFi) and submit an urgent ticket. Don't click anything else on that machine."
 
-No troubleshooting. No additional steps. Just disconnect and escalate. This is the only exception.`;
+No troubleshooting. No additional steps. Just disconnect and escalate. This is the only exception.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MULTILINGUAL SUPPORT — DETECT AND MATCH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Detect the language the employee is writing in. If it is not English, respond in that same language. Supported: English (en), Spanish (es), French (fr), Portuguese (pt), German (de), Chinese Simplified (zh), Japanese (ja). For any other language, respond in English.
+
+ALWAYS start your response with: LANGUAGE: <ISO-639-1 code>
+Examples: LANGUAGE: en | LANGUAGE: es | LANGUAGE: fr | LANGUAGE: pt | LANGUAGE: de | LANGUAGE: zh | LANGUAGE: ja
+
+This LANGUAGE tag is parsed by the system — never omit it. Put it on the very first line, before your response.`;
 
 // POST /ai/assist — ATLAS interactive help
 router.post('/assist', async (req, res) => {
@@ -302,6 +313,16 @@ router.post('/assist', async (req, res) => {
     console.error('[ATLAS] employee context error:', e.message);
   }
 
+  // Inject custom ATLAS instructions configured by admin
+  try {
+    const customInstructionsRow = await db.get("SELECT value FROM settings WHERE key = 'atlas_custom_instructions'");
+    if (customInstructionsRow?.value?.trim()) {
+      systemWithContext += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCOMPANY RULES — follow these at all times:\n${customInstructionsRow.value.trim()}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+  } catch (e) {
+    console.error('[ATLAS] custom instructions inject error:', e.message);
+  }
+
   // Inject proven learned solutions from the global knowledge base
   let matchedSolutionIds = [];
   try {
@@ -343,7 +364,20 @@ ${problem}`,
     console.log('[ATLAS] text block found:', !!textBlock, '| length:', textBlock?.text?.length ?? 0);
     console.log('[ATLAS] suggestion preview:', textBlock?.text?.slice(0, 150));
 
-    const suggestion = textBlock?.text || '';
+    let rawText = textBlock?.text || '';
+
+    // Parse LANGUAGE marker from first line
+    const LANGUAGE_NAMES = { en: 'English', es: 'Spanish', fr: 'French', pt: 'Portuguese', de: 'German', zh: 'Chinese', ja: 'Japanese' };
+    let language = 'en';
+    let language_name = 'English';
+    const langMatch = rawText.match(/^LANGUAGE:\s*([a-z]{2})\s*\n?/i);
+    if (langMatch) {
+      language = langMatch[1].toLowerCase();
+      language_name = LANGUAGE_NAMES[language] || language.toUpperCase();
+      rawText = rawText.replace(/^LANGUAGE:\s*[a-z]{2}\s*\n?/i, '').trimStart();
+    }
+
+    const suggestion = rawText;
 
     // A response is considered self-serviceable if ATLAS provided substantive troubleshooting.
     const resolved = suggestion.length > 150;
@@ -371,8 +405,8 @@ ${problem}`,
       }
     }
 
-    console.log('[ATLAS] final response — suggestion length:', suggestion.length, '| industry:', companyIndustry, '| confidence:', confidence);
-    res.json({ resolved, suggestion, matched_solution_ids: matchedSolutionIds, confidence, industry: companyIndustry });
+    console.log('[ATLAS] final response — suggestion length:', suggestion.length, '| language:', language, '| industry:', companyIndustry, '| confidence:', confidence);
+    res.json({ resolved, suggestion, matched_solution_ids: matchedSolutionIds, confidence, industry: companyIndustry, language, language_name });
   } catch (err) {
     console.error('[ATLAS] assist error:', err.message);
     console.error('[ATLAS] assist stack:', err.stack);

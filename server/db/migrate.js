@@ -301,6 +301,66 @@ export async function runMigrations() {
       stats          TEXT,
       generated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    // Phase 6 tables
+    `CREATE TABLE IF NOT EXISTS incidents (
+      id             SERIAL PRIMARY KEY,
+      title          TEXT NOT NULL,
+      description    TEXT NOT NULL,
+      category       TEXT NOT NULL,
+      ticket_id      INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+      status         TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','resolved')),
+      resolved_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      resolved_at    TIMESTAMPTZ,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS notifications (
+      id             SERIAL PRIMARY KEY,
+      user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      type           TEXT NOT NULL,
+      title          TEXT NOT NULL,
+      body           TEXT NOT NULL,
+      link           TEXT,
+      is_read        INTEGER NOT NULL DEFAULT 0,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS notification_preferences (
+      id                    SERIAL PRIMARY KEY,
+      user_id               INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+      ticket_assigned       INTEGER NOT NULL DEFAULT 1,
+      ticket_updated        INTEGER NOT NULL DEFAULT 1,
+      ticket_resolved       INTEGER NOT NULL DEFAULT 1,
+      new_comment           INTEGER NOT NULL DEFAULT 1,
+      incident_alert        INTEGER NOT NULL DEFAULT 1,
+      weekly_briefing       INTEGER NOT NULL DEFAULT 1,
+      digest_enabled        INTEGER NOT NULL DEFAULT 0,
+      digest_hour           INTEGER NOT NULL DEFAULT 8,
+      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_templates (
+      id             SERIAL PRIMARY KEY,
+      name           TEXT NOT NULL,
+      category       TEXT,
+      body           TEXT NOT NULL,
+      created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      usage_count    INTEGER NOT NULL DEFAULT 0,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_clusters (
+      id             SERIAL PRIMARY KEY,
+      title          TEXT NOT NULL,
+      description    TEXT,
+      category       TEXT NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','resolved')),
+      resolved_at    TIMESTAMPTZ,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_cluster_members (
+      cluster_id  INTEGER NOT NULL REFERENCES ticket_clusters(id) ON DELETE CASCADE,
+      ticket_id   INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      PRIMARY KEY (cluster_id, ticket_id)
+    )`,
   ];
 
   for (const sql of tables) {
@@ -354,6 +414,10 @@ export async function runMigrations() {
     ['jira_token',                ''],
     ['jira_project',              ''],
     ['jira_enabled',              'false'],
+    // Phase 6 settings
+    ['atlas_custom_instructions', ''],
+    ['weekly_briefing_enabled',   'true'],
+    ['health_score_alert_threshold', '70'],
   ];
   for (const [key, value] of settingSeeds) {
     await db.run(

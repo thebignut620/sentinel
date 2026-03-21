@@ -31,6 +31,10 @@ import apiKeysRoutes from './routes/api-keys.js';
 import publicApiRoutes from './routes/public-api.js';
 import jiraRoutes from './routes/jira.js';
 import analyticsRoutes from './routes/analytics.js';
+import incidentRoutes from './routes/incidents.js';
+import notificationRoutes from './routes/notifications.js';
+import ticketTemplateRoutes from './routes/ticket-templates.js';
+import clusterRoutes from './routes/clusters.js';
 import { authenticate } from './middleware/auth.js';
 import { startCronJobs } from './services/cron.js';
 
@@ -86,6 +90,12 @@ app.use('/api/jira', jiraRoutes);
 
 // Phase 5 — Analytics
 app.use('/api/analytics', analyticsRoutes);
+
+// Phase 6 routes
+app.use('/api/incidents', incidentRoutes);
+app.use('/api/notifications', authenticate, notificationRoutes);
+app.use('/api/ticket-templates', ticketTemplateRoutes);
+app.use('/api/clusters', authenticate, clusterRoutes);
 
 // Error handler
 app.use((err, req, res, _next) => {

@@ -87,12 +87,28 @@ export default function AdminSettings() {
         {/* AI */}
         <div className="card p-6">
           <SectionHeader title="AI Help Desk" description="Control the AI troubleshooting feature" />
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-300">Enable AI Assistant</p>
-              <p className="text-xs text-gray-600 mt-0.5">Employees receive AI-powered steps before a ticket is created</p>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-300">Enable AI Assistant</p>
+                <p className="text-xs text-gray-600 mt-0.5">Employees receive AI-powered steps before a ticket is created</p>
+              </div>
+              <Toggle value={settings.ai_enabled || 'true'} onChange={set('ai_enabled')} />
             </div>
-            <Toggle value={settings.ai_enabled || 'true'} onChange={set('ai_enabled')} />
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                Custom ATLAS Instructions
+                <span className="ml-2 text-gray-600 font-normal">(optional)</span>
+              </label>
+              <textarea
+                rows={4}
+                value={settings.atlas_custom_instructions || ''}
+                onChange={e => set('atlas_custom_instructions')(e.target.value)}
+                className="input w-full resize-none font-mono text-xs"
+                placeholder="e.g. Always recommend restarting devices before any other step. Never provide VPN credentials over chat. Escalate any security incidents immediately."
+              />
+              <p className="text-xs text-gray-600 mt-1">These rules are injected into every ATLAS response as company-specific guidelines. Use for policy enforcement, brand voice, or compliance requirements.</p>
+            </div>
           </div>
         </div>
 

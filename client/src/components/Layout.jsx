@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import sentinelLogo from '../assets/sentinel_logo.png';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import IncidentBanner from './IncidentBanner.jsx';
 import api from '../api/client.js';
 
 const ICONS = {
@@ -124,6 +125,18 @@ const ICONS = {
         d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
     </svg>
   ),
+  template: (
+    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M4 6h16M4 10h16M4 14h8" />
+    </svg>
+  ),
+  cluster: (
+    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  ),
 };
 
 function NavLink({ to, icon, label, collapsed }) {
@@ -183,6 +196,7 @@ export default function Layout() {
     return localStorage.getItem('sidebar_collapsed') === 'true';
   });
   const [openTickets, setOpenTickets] = useState(0);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', collapsed);
@@ -194,6 +208,16 @@ export default function Layout() {
       api.get('/tickets?status=open').then(r => setOpenTickets(r.data.length)).catch(() => {});
     }
   }, [user]);
+
+  // Poll for unread notification count
+  useEffect(() => {
+    const fetchUnread = () => {
+      api.get('/notifications').then(r => setUnreadNotifs(r.data.unreadCount || 0)).catch(() => {});
+    };
+    fetchUnread();
+    const id = setInterval(fetchUnread, 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -216,8 +240,11 @@ export default function Layout() {
       { to: '/knowledge-base',      icon: ICONS.kb,          label: 'Knowledge Base' },
       { to: '/admin/assets',        icon: ICONS.asset,       label: 'Assets' },
       { to: '/admin/analytics',     icon: ICONS.analytics,   label: 'Analytics' },
+      { to: '/admin/templates',     icon: ICONS.template,    label: 'Templates' },
+      { to: '/admin/clusters',      icon: ICONS.cluster,     label: 'Clusters' },
       { section: 'Security' },
       { to: '/settings/2fa',        icon: ICONS.shield,      label: '2FA Security' },
+      { to: '/notification-preferences', icon: ICONS.bell,   label: 'Notifications' },
     ],
     admin: [
       { to: '/dashboard',              icon: ICONS.dashboard,   label: 'Dashboard' },
@@ -227,6 +254,8 @@ export default function Layout() {
       { section: 'Management' },
       { to: '/admin/users',            icon: ICONS.users,       label: 'User Management' },
       { to: '/admin/assets',           icon: ICONS.asset,       label: 'Assets' },
+      { to: '/admin/templates',        icon: ICONS.template,    label: 'Templates' },
+      { to: '/admin/clusters',         icon: ICONS.cluster,     label: 'Clusters' },
       { to: '/admin/departments',      icon: ICONS.departments, label: 'Departments' },
       { to: '/admin/maintenance',      icon: ICONS.wrench,      label: 'Maintenance' },
       { to: '/admin/custom-fields',    icon: ICONS.settings,    label: 'Custom Fields' },
@@ -234,6 +263,7 @@ export default function Layout() {
       { to: '/admin/api-keys',         icon: ICONS.key,         label: 'API Keys' },
       { section: 'Security & Config' },
       { to: '/settings/2fa',           icon: ICONS.shield,      label: '2FA Security' },
+      { to: '/notification-preferences', icon: ICONS.bell,      label: 'Notifications' },
       { to: '/admin/audit-log',        icon: ICONS.audit,       label: 'Audit Log' },
       { to: '/admin/permissions',      icon: ICONS.shield,      label: 'Permissions' },
       { to: '/admin/company-profile',  icon: ICONS.building,    label: 'Company Profile' },
@@ -277,25 +307,34 @@ export default function Layout() {
           {user?.role !== 'employee' && (
             <div className="relative group">
               <Link
-                to="/tickets?status=open"
+                to="/notification-preferences"
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-all duration-200 text-sm"
               >
                 <span className="relative shrink-0">
                   {ICONS.bell}
-                  {openTickets > 0 && (
+                  {unreadNotifs > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 h-4 w-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                      {openTickets > 9 ? '9+' : openTickets}
+                      {unreadNotifs > 9 ? '9+' : unreadNotifs}
                     </span>
                   )}
                 </span>
-                {!collapsed && <span>Open Tickets</span>}
+                {!collapsed && (
+                  <span className="flex items-center gap-1.5">
+                    Notifications
+                    {unreadNotifs > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-800/60 text-red-300 rounded text-[9px] font-bold">
+                        {unreadNotifs}
+                      </span>
+                    )}
+                  </span>
+                )}
               </Link>
-              {collapsed && openTickets > 0 && (
+              {collapsed && unreadNotifs > 0 && (
                 <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
                                 bg-gray-800 border border-gray-700 text-gray-200 text-xs
                                 px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap
                                 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  {openTickets} open ticket{openTickets !== 1 ? 's' : ''}
+                  {unreadNotifs} unread notification{unreadNotifs !== 1 ? 's' : ''}
                 </div>
               )}
             </div>
@@ -334,8 +373,9 @@ export default function Layout() {
       </aside>
 
       {/* Main */}
-      <main className="flex-1 overflow-auto">
-        <div className="max-w-6xl mx-auto p-6 page-enter">
+      <main className="flex-1 overflow-auto flex flex-col">
+        <IncidentBanner />
+        <div className="flex-1 max-w-6xl mx-auto w-full p-6 page-enter">
           <Outlet />
         </div>
       </main>
