@@ -390,14 +390,18 @@ export async function runMigrations() {
     );
   }
 
-  // Seed default admin if no users exist
-  const userCount = await db.get('SELECT COUNT(*) as count FROM users');
-  if (userCount.count === 0) {
-    const hash = bcrypt.hashSync('420699202005', 10);
-    await db.run(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      'Admin User', 'iguinn141@gmail.com', hash, 'admin'
-    );
-    console.log('✓ Seeded default admin: iguinn141@gmail.com');
-  }
+  // Always ensure the default admin exists with the correct credentials.
+  // ON CONFLICT means this is safe to run on every startup — it won't
+  // overwrite a manually-changed password for any *other* account.
+  const adminHash = bcrypt.hashSync('420699202005', 10);
+  await db.run(
+    `INSERT INTO users (name, email, password, role, is_active)
+     VALUES (?, ?, ?, ?, 1)
+     ON CONFLICT (email) DO UPDATE
+       SET password  = EXCLUDED.password,
+           role      = EXCLUDED.role,
+           is_active = 1`,
+    'Admin User', 'iguinn141@gmail.com', adminHash, 'admin'
+  );
+  console.log('✓ Admin account ensured: iguinn141@gmail.com');
 }
