@@ -1,5 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import sentinelLogo from '../assets/sentinel_logo.png';
 
 // Scroll-reveal hook
 function useReveal() {
@@ -178,11 +179,8 @@ export default function Landing() {
       {/* ─── Nav ─── */}
       <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-950/90 backdrop-blur border-b border-gray-800/60">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-green-700 rounded-lg flex items-center justify-center shrink-0">
-              <span className="text-white font-bold text-sm">S</span>
-            </div>
-            <span className="font-bold text-white text-lg tracking-tight">Sentinel</span>
+          <Link to="/" className="flex items-center">
+            <img src={sentinelLogo} alt="Sentinel" className="h-8 w-auto" />
           </Link>
           <div className="hidden md:flex items-center gap-6 text-sm text-gray-400">
             <a href="#features" className="hover:text-white transition-colors">Features</a>
@@ -210,6 +208,7 @@ export default function Landing() {
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-green-700/5 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 text-center max-w-4xl mx-auto">
+          <img src={sentinelLogo} alt="Sentinel" className="h-16 w-auto mx-auto mb-8" />
           <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-green-900/30 border border-green-700/40 rounded-full text-green-400 text-xs font-medium mb-8">
             <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
             Powered by ATLAS AI — Built on Claude
@@ -423,11 +422,8 @@ export default function Landing() {
       <footer className="border-t border-gray-800 py-12 px-4">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-green-700 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xs">S</span>
-              </div>
-              <span className="font-bold text-gray-300">Sentinel</span>
+            <Link to="/">
+              <img src={sentinelLogo} alt="Sentinel" className="h-6 w-auto opacity-70 hover:opacity-100 transition-opacity" />
             </Link>
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500">
               <a href="#features" className="hover:text-gray-300 transition-colors">Features</a>
