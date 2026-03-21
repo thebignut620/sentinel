@@ -1,29 +1,26 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext.jsx';
+import api from '../api/client.js';
 
 export default function IncidentBanner() {
-  const { token } = useAuth();
   const [incidents, setIncidents] = useState([]);
   const [dismissed, setDismissed] = useState(new Set());
 
   useEffect(() => {
-    if (!token) return;
-    const fetch = () => {
-      window.fetch('/api/incidents/active', { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(data => setIncidents(Array.isArray(data) ? data : []))
+    const poll = () => {
+      api.get('/incidents/active')
+        .then(r => setIncidents(Array.isArray(r.data) ? r.data : []))
         .catch(() => {});
     };
-    fetch();
-    const id = setInterval(fetch, 60_000);
+    poll();
+    const id = setInterval(poll, 60_000);
     return () => clearInterval(id);
-  }, [token]);
+  }, []);
 
   const visible = incidents.filter(i => !dismissed.has(i.id));
   if (visible.length === 0) return null;
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-px">
       {visible.map(incident => (
         <div
           key={incident.id}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext.jsx';
+import api from '../api/client.js';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => {
   const h = i % 12 || 12;
@@ -29,18 +29,15 @@ function Toggle({ checked, onChange, label, description }) {
 }
 
 export default function NotificationPreferences() {
-  const { token } = useAuth();
   const [prefs, setPrefs] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
   useEffect(() => {
-    fetch('/api/notifications/preferences', { headers })
-      .then(r => r.json())
-      .then(data => {
+    api.get('/notifications/preferences')
+      .then(r => {
+        const data = r.data;
         setPrefs({
           ticket_assigned: !!data.ticket_assigned,
           ticket_updated: !!data.ticket_updated,
@@ -63,11 +60,7 @@ export default function NotificationPreferences() {
   async function save() {
     setSaving(true);
     try {
-      await fetch('/api/notifications/preferences', {
-        method: 'PUT',
-        headers,
-        body: JSON.stringify(prefs),
-      });
+      await api.put('/notifications/preferences', prefs);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } finally {

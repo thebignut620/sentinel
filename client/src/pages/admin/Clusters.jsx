@@ -1,23 +1,23 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext.jsx';
+import api from '../../../api/client.js';
 
 export default function Clusters() {
-  const { token } = useAuth();
   const [clusters, setClusters] = useState([]);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState('');
   const [expanded, setExpanded] = useState(null);
   const [expandedData, setExpandedData] = useState({});
   const [resolving, setResolving] = useState(null);
   const [resolutionText, setResolutionText] = useState('');
 
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch('/api/clusters', { headers });
-      setClusters(await r.json());
+      const r = await api.get('/clusters');
+      setClusters(Array.isArray(r.data) ? r.data : []);
+    } catch (err) {
+      console.error('[Clusters] load failed:', err.response?.data || err.message);
     } finally {
       setLoading(false);
     }
@@ -29,24 +29,30 @@ export default function Clusters() {
     if (expanded === id) { setExpanded(null); return; }
     setExpanded(id);
     if (!expandedData[id]) {
-      const r = await fetch(`/api/clusters/${id}`, { headers });
-      const data = await r.json();
-      setExpandedData(prev => ({ ...prev, [id]: data }));
+      try {
+        const r = await api.get(`/clusters/${id}`);
+        setExpandedData(prev => ({ ...prev, [id]: r.data }));
+      } catch (err) {
+        console.error('[Clusters] expand failed:', err.response?.data || err.message);
+      }
     }
   }
 
   async function analyze() {
     setAnalyzing(true);
+    setAnalyzeError('');
     try {
-      const r = await fetch('/api/clusters/analyze', { method: 'POST', headers });
-      const data = await r.json();
-      if (data.clusters?.length) {
+      const r = await api.post('/clusters/analyze');
+      console.log('[Clusters] analyze response:', r.data);
+      if (r.data.clusters?.length) {
         load();
       } else {
-        alert(data.message || 'No clusters found.');
+        setAnalyzeError(r.data.message || 'No related clusters found in the open tickets.');
       }
-    } catch {
-      alert('Analysis failed. Try again.');
+    } catch (err) {
+      const msg = err.response?.data?.error || err.message || 'Analysis failed.';
+      console.error('[Clusters] analyze error:', msg);
+      setAnalyzeError(msg);
     } finally {
       setAnalyzing(false);
     }
@@ -58,18 +64,13 @@ export default function Clusters() {
 
   async function confirmResolve(clusterId) {
     try {
-      const r = await fetch(`/api/clusters/${clusterId}/bulk-resolve`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ resolution: resolutionText }),
-      });
-      const data = await r.json();
-      alert(`Resolved ${data.resolved} ticket(s).`);
+      const r = await api.post(`/clusters/${clusterId}/bulk-resolve`, { resolution: resolutionText });
+      alert(`Resolved ${r.data.resolved} ticket(s).`);
       setResolving(null);
       setResolutionText('');
       load();
-    } catch {
-      alert('Bulk resolve failed.');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Bulk resolve failed.');
     }
   }
 
@@ -90,11 +91,16 @@ export default function Clusters() {
         >
           {analyzing ? (
             <span className="flex items-center gap-2">
-              <span className="animate-spin">⟳</span> Analyzing…
+              <span className="animate-spin inline-block">⟳</span> Analyzing…
             </span>
           ) : '✦ Run ATLAS Analysis'}
         </button>
       </div>
+      {analyzeError && (
+        <div className="bg-red-900/20 border border-red-800/50 rounded-lg px-4 py-3 text-sm text-red-400">
+          {analyzeError}
+        </div>
+      )}
 
       {loading ? (
         <div className="text-gray-500 text-center py-12">Loading…</div>

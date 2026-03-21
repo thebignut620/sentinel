@@ -1,24 +1,21 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext.jsx';
+import api from '../../../api/client.js';
 
 const CATEGORIES = ['hardware', 'software', 'network', 'access', 'account', 'general'];
 
 export default function Templates() {
-  const { token } = useAuth();
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState(null); // template object being edited
+  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', category: '', body: '' });
   const [saving, setSaving] = useState(false);
-
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
   async function load() {
     setLoading(true);
     try {
-      const r = await fetch('/api/ticket-templates', { headers });
-      setTemplates(await r.json());
+      const r = await api.get('/ticket-templates');
+      setTemplates(Array.isArray(r.data) ? r.data : []);
     } finally {
       setLoading(false);
     }
@@ -43,13 +40,9 @@ export default function Templates() {
     setSaving(true);
     try {
       if (editing) {
-        await fetch(`/api/ticket-templates/${editing.id}`, {
-          method: 'PUT', headers, body: JSON.stringify(form),
-        });
+        await api.put(`/ticket-templates/${editing.id}`, form);
       } else {
-        await fetch('/api/ticket-templates', {
-          method: 'POST', headers, body: JSON.stringify(form),
-        });
+        await api.post('/ticket-templates', form);
       }
       setShowForm(false);
       load();
@@ -60,7 +53,7 @@ export default function Templates() {
 
   async function remove(id) {
     if (!confirm('Delete this template?')) return;
-    await fetch(`/api/ticket-templates/${id}`, { method: 'DELETE', headers });
+    await api.delete(`/ticket-templates/${id}`);
     load();
   }
 
