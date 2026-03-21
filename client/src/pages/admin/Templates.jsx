@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import api from '../../../api/client.js';
+import api from '../../api/client.js';
 
 const CATEGORIES = ['hardware', 'software', 'network', 'access', 'account', 'general'];
 

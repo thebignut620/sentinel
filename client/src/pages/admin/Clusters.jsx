@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import api from '../../../api/client.js';
+import api from '../../api/client.js';
 
 export default function Clusters() {
   const [clusters, setClusters] = useState([]);
