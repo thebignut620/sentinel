@@ -44,7 +44,7 @@ export async function analyzeTicket(title, description) {
   if (!await isAIEnabled()) return null;
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 256,
       system: ATLAS_IDENTITY,
       messages: [{
@@ -119,7 +119,7 @@ export async function findSimilarTickets(ticketId, title, description) {
       .join('\n');
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 400,
       system: ATLAS_IDENTITY,
       messages: [{
@@ -189,7 +189,7 @@ export async function generateResolutionReport(ticket, comments, notes) {
       : null;
 
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 900,
       system: ATLAS_IDENTITY,
       messages: [{
@@ -234,7 +234,7 @@ export async function extractLearnedSolution(ticketId, title, description, solut
   if (!await isAIEnabled()) return null;
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 400,
       system: ATLAS_IDENTITY,
       messages: [{
@@ -316,7 +316,7 @@ export async function generateWeeklyReport(stats) {
   if (!await isAIEnabled()) return null;
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 800,
       system: `You are ATLAS — the AI backbone of Sentinel IT Helpdesk. You write a concise, professional weekly briefing for IT admins. Tone: confident and data-driven, like a senior engineer who knows what they're talking about. No filler. Pure signal.`,
       messages: [{
@@ -364,7 +364,7 @@ export async function generateKBArticle(ticket, resolutionReport) {
   if (!await isAIEnabled()) return null;
   try {
     const response = await client.messages.create({
-      model: 'claude-opus-4-6',
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 600,
       system: ATLAS_IDENTITY,
       messages: [{
