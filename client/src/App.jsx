@@ -34,6 +34,8 @@ import TwoFactorSetup from './pages/admin/TwoFactorSetup.jsx';
 import SsoCallback from './pages/SsoCallback.jsx';
 import ApiKeys from './pages/admin/ApiKeys.jsx';
 import ApiDocs from './pages/ApiDocs.jsx';
+import Analytics from './pages/admin/Analytics.jsx';
+import SurveyFeedback from './pages/SurveyFeedback.jsx';
 import api from './api/client.js';
 
 function RootRedirect() {
@@ -116,6 +118,7 @@ function AppInner() {
         <Route path="/sso-callback" element={<SsoCallback />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/api-docs" element={<ApiDocs />} />
+        <Route path="/survey/:token" element={<SurveyFeedback />} />
 
         {/* Onboarding wizard — full screen, no sidebar */}
         <Route
@@ -242,6 +245,14 @@ function AppInner() {
             element={
               <ProtectedRoute roles={['admin']}>
                 <ApiKeys />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/analytics"
+            element={
+              <ProtectedRoute roles={['admin', 'it_staff']}>
+                <Analytics />
               </ProtectedRoute>
             }
           />

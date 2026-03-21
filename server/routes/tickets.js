@@ -1,7 +1,8 @@
 import express from 'express';
 import db from '../db/connection.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
-import { sendTicketStatusEmail } from '../services/email.js';
+import { sendTicketStatusEmail, sendSatisfactionSurvey } from '../services/email.js';
+import crypto from 'crypto';
 import * as atlas from '../services/atlas.js';
 import { detectActionType as detectGoogleAction, getIntegration as getGoogleIntegration } from '../services/googleWorkspace.js';
 import { detectActionType as detectMsAction, getIntegration as getMsIntegration, sendTeamsNotification } from '../services/microsoftGraph.js';
@@ -400,6 +401,28 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
     const submitter = await db.get('SELECT name, email FROM users WHERE id = ?', ticket.submitter_id);
     if (submitter) {
       sendTicketStatusEmail({ to: submitter.email, name: submitter.name, ticketId: ticket.id, title: ticket.title, newStatus: status });
+
+      // Send satisfaction survey when ticket is resolved (first time only)
+      if (status === 'resolved' && ticket.status !== 'resolved') {
+        setImmediate(async () => {
+          try {
+            const token = crypto.randomBytes(32).toString('hex');
+            await db.run(
+              'INSERT INTO satisfaction_ratings (ticket_id, token) VALUES (?, ?)',
+              ticket.id, token
+            );
+            await sendSatisfactionSurvey({
+              to: submitter.email,
+              name: submitter.name,
+              ticketId: ticket.id,
+              ticketTitle: ticket.title,
+              token,
+            });
+          } catch (e) {
+            console.error('[satisfaction] failed to send survey:', e.message);
+          }
+        });
+      }
     }
   }
 

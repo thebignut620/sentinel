@@ -9,10 +9,11 @@ import cron from 'node-cron';
 import db from '../db/connection.js';
 import * as atlas from './atlas.js';
 import { gatherWeeklyStats } from './learning.js';
-import { sendWeeklyReport } from './email.js';
+import { sendWeeklyReport, sendMonthlyReport } from './email.js';
 import nodemailer from 'nodemailer';
 import { pollEmailInbox } from './emailIngestion.js';
 import { checkCriticalUnassignedTickets } from './pagerduty.js';
+import { generateMonthlyReport, generateMonthlyPdf } from './analyticsReport.js';
 
 async function getTransporter() {
   const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
@@ -172,6 +173,34 @@ export function startCronJobs() {
       console.error('[PagerDuty Cron] failed:', e.message);
     }
   });
+
+  // Every Monday at 8:00 AM UTC — check if it's the first Monday of the month
+  // and generate + email the monthly report
+  cron.schedule('0 8 * * 1', async () => {
+    const today = new Date();
+    // First Monday = day-of-month is 1..7
+    if (today.getDate() > 7) return;
+    console.log('[ATLAS Cron] Running monthly IT report…');
+    try {
+      const { reportText, stats } = await generateMonthlyReport();
+      const pdfBuffer = await generateMonthlyPdf(reportText, stats);
+      const admins = await db.all(
+        "SELECT name, email FROM users WHERE role = 'admin' AND is_active = 1"
+      );
+      for (const admin of admins) {
+        await sendMonthlyReport({
+          to: admin.email,
+          name: admin.name,
+          reportText,
+          stats,
+          pdfBuffer,
+        });
+      }
+      console.log(`[ATLAS Cron] Monthly report sent to ${admins.length} admin(s)`);
+    } catch (e) {
+      console.error('[ATLAS Cron] Monthly report failed:', e.message);
+    }
+  }, { timezone: 'UTC' });
 
   console.log('✓ ATLAS cron jobs scheduled');
 }

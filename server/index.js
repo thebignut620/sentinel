@@ -30,6 +30,7 @@ import zapierRoutes from './routes/zapier.js';
 import apiKeysRoutes from './routes/api-keys.js';
 import publicApiRoutes from './routes/public-api.js';
 import jiraRoutes from './routes/jira.js';
+import analyticsRoutes from './routes/analytics.js';
 import { authenticate } from './middleware/auth.js';
 import { startCronJobs } from './services/cron.js';
 
@@ -78,6 +79,9 @@ app.use('/api/zapier', zapierRoutes);
 app.use('/api/api-keys', apiKeysRoutes);
 app.use('/v1', publicApiRoutes);
 app.use('/api/jira', jiraRoutes);
+
+// Phase 5 — Analytics
+app.use('/api/analytics', analyticsRoutes);
 
 // Error handler
 app.use((err, req, res, _next) => {

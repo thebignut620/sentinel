@@ -283,6 +283,24 @@ export async function runMigrations() {
       pushed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_sync_at   TIMESTAMPTZ
     )`,
+    // Phase 5 tables
+    `CREATE TABLE IF NOT EXISTS satisfaction_ratings (
+      id           SERIAL PRIMARY KEY,
+      ticket_id    INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      token        TEXT NOT NULL UNIQUE,
+      rating       TEXT CHECK(rating IN ('up', 'down')),
+      comment      TEXT,
+      submitted_at TIMESTAMPTZ,
+      sent_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS monthly_reports (
+      id             SERIAL PRIMARY KEY,
+      report_month   TEXT NOT NULL UNIQUE,
+      report_text    TEXT NOT NULL,
+      pdf_path       TEXT,
+      stats          TEXT,
+      generated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
   ];
 
   for (const sql of tables) {

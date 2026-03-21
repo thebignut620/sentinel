@@ -198,6 +198,113 @@ export async function sendMicrosoftTempPassword({ to, name, tempPassword, ticket
   }
 }
 
+export async function sendSatisfactionSurvey({ to, name, ticketId, ticketTitle, token }) {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const cfg = await getConfig();
+    const company = cfg.company_name || 'Sentinel IT';
+    const surveyUrl = `${BASE_URL}/survey/${token}`;
+    await transporter.sendMail({
+      from: cfg.smtp_from || cfg.smtp_user,
+      to,
+      subject: `[${company}] How did we do? Quick feedback on Ticket #${ticketId}`,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#1a3a1a,#2d6a2d);padding:24px 32px;">
+            <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#4aaa4a;">Sentinel IT</p>
+            <h1 style="margin:0;font-size:20px;color:#fff;">How did we do?</h1>
+          </div>
+          <div style="padding:32px;">
+            <p>Hi <strong>${name}</strong>,</p>
+            <p>Your IT ticket has been resolved. We'd love to hear how it went — it only takes 2 seconds.</p>
+            <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;margin:20px 0;">
+              <p style="margin:0;color:#aaa;font-size:13px;"><strong style="color:#fff;">Ticket #${ticketId}:</strong> ${ticketTitle}</p>
+            </div>
+            <p style="text-align:center;margin:28px 0 12px;font-size:15px;color:#ccc;">Was your issue resolved to your satisfaction?</p>
+            <div style="text-align:center;margin:0 0 28px;">
+              <a href="${surveyUrl}?rating=up"
+                 style="display:inline-block;background:#2d6a2d;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:22px;margin:0 8px;">
+                👍 Yes
+              </a>
+              <a href="${surveyUrl}?rating=down"
+                 style="display:inline-block;background:#3a1a1a;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:22px;margin:0 8px;">
+                👎 No
+              </a>
+            </div>
+            <p style="color:#555;font-size:12px;text-align:center;">— ${company} IT Team</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[email] Failed to send satisfaction survey:', err.message);
+  }
+}
+
+export async function sendMonthlyReport({ to, name, reportText, stats, pdfBuffer }) {
+  try {
+    const transporter = await getTransporter();
+    if (!transporter) return;
+    const cfg = await getConfig();
+    const company = cfg.company_name || 'Sentinel IT';
+
+    const { ticketStats = {}, monthKey = '' } = stats || {};
+    const prevMonthLabel = monthKey
+      ? new Date(monthKey + '-01').toLocaleString('en-US', { month: 'long', year: 'numeric' })
+      : 'Monthly';
+
+    const reportHtml = (reportText || '')
+      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#fff;">$1</strong>')
+      .replace(/\n\n/g, '</p><p style="margin:0 0 12px;color:#aaa;line-height:1.6;">')
+      .replace(/\n/g, '<br>');
+
+    const attachments = pdfBuffer
+      ? [{ filename: `sentinel-monthly-${monthKey}.pdf`, content: pdfBuffer, contentType: 'application/pdf' }]
+      : [];
+
+    await transporter.sendMail({
+      from: cfg.smtp_from || cfg.smtp_user,
+      to,
+      subject: `[${company}] ATLAS Monthly IT Report — ${prevMonthLabel}`,
+      attachments,
+      html: `
+        <div style="font-family:system-ui,sans-serif;max-width:640px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
+          <div style="background:linear-gradient(135deg,#1a3a1a,#2d6a2d);padding:24px 32px;">
+            <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:2px;color:#4aaa4a;">ATLAS Intelligence</p>
+            <h1 style="margin:0;font-size:22px;color:#fff;">${company} — Monthly Report</h1>
+            <p style="margin:8px 0 0;font-size:13px;color:#a0d0a0;">${prevMonthLabel}</p>
+          </div>
+          <div style="padding:28px 32px;">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:24px;">
+              ${[
+                ['Total Tickets', ticketStats.total || 0],
+                ['Resolved', ticketStats.resolved || 0],
+                ['ATLAS Handled', ticketStats.atlas_handled || 0],
+              ].map(([label, val]) => `
+                <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:14px;text-align:center;">
+                  <div style="font-size:24px;font-weight:700;color:#4aaa4a;">${val}</div>
+                  <div style="font-size:11px;color:#888;margin-top:2px;">${label}</div>
+                </div>
+              `).join('')}
+            </div>
+            <div style="background:#111;border:1px solid #222;border-radius:8px;padding:20px;margin-bottom:20px;">
+              <p style="margin:0 0 14px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#4aaa4a;">ATLAS Monthly Analysis</p>
+              <p style="margin:0 0 12px;color:#aaa;line-height:1.6;">${reportHtml}</p>
+            </div>
+            ${pdfBuffer ? '<p style="color:#666;font-size:12px;text-align:center;">Full PDF report attached.</p>' : ''}
+            <p style="margin-top:16px;color:#555;font-size:12px;text-align:center;">
+              Generated by ATLAS — ${company} IT Intelligence System
+            </p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[email] Failed to send monthly report:', err.message);
+  }
+}
+
 export async function sendPasswordResetEmail({ to, name, token }) {
   try {
     const transporter = await getTransporter();
