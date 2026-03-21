@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../contexts/AuthContext.jsx';
 
 const HOURS = Array.from({ length: 24 }, (_, i) => {
   const h = i % 12 || 12;

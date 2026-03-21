@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../../contexts/AuthContext.jsx';
 
 const CATEGORIES = ['hardware', 'software', 'network', 'access', 'account', 'general'];
 
