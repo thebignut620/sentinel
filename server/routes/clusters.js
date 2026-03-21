@@ -103,7 +103,14 @@ router.post('/:id/bulk-resolve', authenticate, requireRole(['it_staff', 'admin']
 
 // POST /api/clusters/analyze — ATLAS groups open tickets into clusters
 router.post('/analyze', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
+  const MODEL = 'claude-sonnet-4-20250514';
+  const keyPreview = process.env.ANTHROPIC_API_KEY
+    ? process.env.ANTHROPIC_API_KEY.slice(0, 10) + '...'
+    : 'NOT SET';
+  console.log('[Clusters] analyze start — model:', MODEL, '| key prefix:', keyPreview, '| user:', req.user?.id, req.user?.role);
+
   try {
+    console.log('[Clusters] step 1: querying open tickets');
     const openTickets = await db.all(
       `SELECT id, title, description, category
        FROM tickets
@@ -111,8 +118,10 @@ router.post('/analyze', authenticate, requireRole(['it_staff', 'admin']), async 
        ORDER BY created_at DESC
        LIMIT 100`
     );
+    console.log('[Clusters] step 1 done: found', openTickets.length, 'open tickets');
 
     if (openTickets.length < 2) {
+      console.log('[Clusters] not enough tickets, returning early');
       return res.json({ clusters: [], message: 'Not enough open tickets to cluster.' });
     }
 
@@ -120,14 +129,15 @@ router.post('/analyze', authenticate, requireRole(['it_staff', 'admin']), async 
       `ID:${t.id} [${t.category || 'general'}] "${t.title}": ${(t.description || '').slice(0, 120)}`
     ).join('\n');
 
-    console.log('[Clusters] sending', openTickets.length, 'tickets to ATLAS');
-
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1024,
-      messages: [{
-        role: 'user',
-        content: `You are an IT helpdesk analyst. Analyze the following open tickets and group related ones into clusters.
+    console.log('[Clusters] step 2: calling Anthropic API with model:', MODEL);
+    let message;
+    try {
+      message = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 1024,
+        messages: [{
+          role: 'user',
+          content: `You are an IT helpdesk analyst. Analyze the following open tickets and group related ones into clusters.
 
 Tickets:
 ${ticketList}
@@ -135,18 +145,29 @@ ${ticketList}
 Return a JSON array of cluster objects. Only include groups of 2+ tickets.
 Format: [{"title": "short cluster name", "description": "what they have in common", "category": "category", "ticket_ids": [1,2,3]}]
 Return ONLY the JSON array, no other text.`
-      }]
-    });
+        }]
+      });
+      console.log('[Clusters] step 2 done: Anthropic responded, stop_reason:', message.stop_reason, '| content blocks:', message.content?.length);
+    } catch (apiErr) {
+      console.error('[Clusters] Anthropic API error — status:', apiErr.status, '| message:', apiErr.message);
+      console.error('[Clusters] Anthropic error body:', JSON.stringify(apiErr.error || apiErr.body || {}));
+      return res.status(500).json({ error: `Anthropic API error: ${apiErr.message}` });
+    }
 
     const rawText = message.content.find(b => b.type === 'text')?.text || '[]';
-    console.log('[Clusters] ATLAS raw response:', rawText.slice(0, 200));
+    console.log('[Clusters] step 3: raw response preview:', rawText.slice(0, 300));
 
     const proposed = extractJSON(rawText, '[]');
+    console.log('[Clusters] step 3 done: parsed', Array.isArray(proposed) ? proposed.length : 'non-array', 'clusters');
+
     if (!Array.isArray(proposed)) {
       return res.json({ clusters: [], message: 'ATLAS returned unexpected format.' });
     }
+    if (proposed.length === 0) {
+      return res.json({ clusters: [], message: 'No related clusters found in the open tickets.' });
+    }
 
-    // Persist the clusters
+    console.log('[Clusters] step 4: persisting clusters to db');
     const created = [];
     for (const c of proposed) {
       const result = await db.run(
@@ -154,7 +175,7 @@ Return ONLY the JSON array, no other text.`
         c.title, c.description, c.category
       );
       const clusterId = result.lastInsertRowid;
-      console.log('[Clusters] created cluster id:', clusterId, 'title:', c.title);
+      console.log('[Clusters] inserted cluster id:', clusterId, 'title:', c.title, 'tickets:', c.ticket_ids);
 
       for (const ticketId of c.ticket_ids) {
         await db.run(
@@ -166,9 +187,10 @@ Return ONLY the JSON array, no other text.`
       created.push({ ...c, id: clusterId });
     }
 
+    console.log('[Clusters] step 4 done: created', created.length, 'clusters, sending response');
     res.json({ clusters: created });
   } catch (err) {
-    console.error('[Clusters] analyze error:', err.message);
+    console.error('[Clusters] unhandled error:', err.message);
     console.error('[Clusters] stack:', err.stack);
     res.status(500).json({ error: err.message || 'Failed to analyze clusters' });
   }
