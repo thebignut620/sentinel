@@ -4,7 +4,19 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router = express.Router();
-const anthropic = new Anthropic();
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+function extractJSON(text, fallback) {
+  try {
+    const arrayMatch = text.match(/\[[\s\S]*\]/);
+    const objectMatch = text.match(/\{[\s\S]*\}/);
+    if (fallback === '[]' && arrayMatch) return JSON.parse(arrayMatch[0]);
+    if (fallback === '{}' && objectMatch) return JSON.parse(objectMatch[0]);
+    if (arrayMatch) return JSON.parse(arrayMatch[0]);
+    if (objectMatch) return JSON.parse(objectMatch[0]);
+  } catch {}
+  return JSON.parse(fallback);
+}
 
 // GET /api/clusters — list clusters with member count
 router.get('/', authenticate, async (req, res) => {
@@ -105,8 +117,10 @@ router.post('/analyze', authenticate, requireRole(['it_staff', 'admin']), async 
     }
 
     const ticketList = openTickets.map(t =>
-      `ID:${t.id} [${t.category}] "${t.title}": ${t.description.slice(0, 120)}`
+      `ID:${t.id} [${t.category || 'general'}] "${t.title}": ${(t.description || '').slice(0, 120)}`
     ).join('\n');
+
+    console.log('[Clusters] sending', openTickets.length, 'tickets to ATLAS');
 
     const message = await anthropic.messages.create({
       model: 'claude-opus-4-6',
@@ -124,8 +138,13 @@ Return ONLY the JSON array, no other text.`
       }]
     });
 
-    const text = message.content[0].text.trim();
-    const proposed = JSON.parse(text);
+    const rawText = message.content.find(b => b.type === 'text')?.text || '[]';
+    console.log('[Clusters] ATLAS raw response:', rawText.slice(0, 200));
+
+    const proposed = extractJSON(rawText, '[]');
+    if (!Array.isArray(proposed)) {
+      return res.json({ clusters: [], message: 'ATLAS returned unexpected format.' });
+    }
 
     // Persist the clusters
     const created = [];
@@ -134,7 +153,8 @@ Return ONLY the JSON array, no other text.`
         `INSERT INTO ticket_clusters (title, description, category) VALUES (?, ?, ?)`,
         c.title, c.description, c.category
       );
-      const clusterId = result.lastID || result.id;
+      const clusterId = result.lastInsertRowid;
+      console.log('[Clusters] created cluster id:', clusterId, 'title:', c.title);
 
       for (const ticketId of c.ticket_ids) {
         await db.run(
@@ -148,8 +168,9 @@ Return ONLY the JSON array, no other text.`
 
     res.json({ clusters: created });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to analyze clusters' });
+    console.error('[Clusters] analyze error:', err.message);
+    console.error('[Clusters] stack:', err.stack);
+    res.status(500).json({ error: err.message || 'Failed to analyze clusters' });
   }
 });
 
