@@ -50,7 +50,7 @@ function StatsBar({ tickets, myId }) {
   const avgH = Math.round(avgMs / 3_600_000);
 
   return (
-    <div className="grid grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
       {[
         { label: 'Open', value: open, color: 'text-red-400' },
         { label: 'Resolved Today', value: resolvedToday, color: 'text-pine-400' },
@@ -332,6 +332,7 @@ export default function TicketList() {
   const [filterCat, setFC]        = useState('all');
   const [selectedIds, setSelected] = useState(new Set());
   const [bulkMode, setBulkMode]   = useState(false);
+  const [mobileKanbanTab, setMobileKanbanTab] = useState('open');
 
   const load = useCallback(async () => {
     try {
@@ -431,17 +432,19 @@ export default function TicketList() {
       <StatsBar tickets={tickets} myId={user.id} />
 
       {/* Filters */}
-      <div className="card p-3 flex flex-wrap gap-3 items-center">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search tickets…" className="flex-1 min-w-40" />
-        <select value={filterPriority} onChange={e => setFP(e.target.value)} className="input">
-          <option value="all">All priorities</option>
-          {['critical','high','medium','low'].map(p => <option key={p} value={p}>{p}</option>)}
-        </select>
-        <select value={filterCat} onChange={e => setFC(e.target.value)} className="input">
-          <option value="all">All categories</option>
-          {['hardware','software','network','access','account'].map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <span className="text-xs text-gray-600">{visible.length} ticket{visible.length !== 1 ? 's' : ''}</span>
+      <div className="card p-3 flex flex-col sm:flex-row flex-wrap gap-3 items-stretch sm:items-center">
+        <SearchInput value={search} onChange={setSearch} placeholder="Search tickets…" className="flex-1 min-w-0" />
+        <div className="flex gap-3 flex-wrap">
+          <select value={filterPriority} onChange={e => setFP(e.target.value)} className="input flex-1 sm:flex-none">
+            <option value="all">All priorities</option>
+            {['critical','high','medium','low'].map(p => <option key={p} value={p}>{p}</option>)}
+          </select>
+          <select value={filterCat} onChange={e => setFC(e.target.value)} className="input flex-1 sm:flex-none">
+            <option value="all">All categories</option>
+            {['hardware','software','network','access','account'].map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <span className="text-xs text-gray-600 self-center">{visible.length} ticket{visible.length !== 1 ? 's' : ''}</span>
+        </div>
       </div>
 
       {/* Bulk action bar */}
@@ -476,21 +479,57 @@ export default function TicketList() {
       {loading ? (
         <SkeletonTable rows={6} />
       ) : view === 'kanban' ? (
-        /* ── Kanban ── */
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {kanbanCols.map(col => (
-            <KanbanColumn
-              key={col.key}
-              column={col}
-              tickets={col.tickets}
-              staffUsers={staffUsers}
-              onUpdate={handleUpdate}
-              selectedIds={selectedIds}
-              onToggleSelect={toggleSelect}
-              bulkMode={bulkMode}
-            />
-          ))}
-        </div>
+        <>
+          {/* Mobile: column tabs */}
+          <div className="md:hidden flex bg-gray-800 border border-gray-700 rounded-lg p-0.5 gap-0.5">
+            {COLUMN_CONFIG.map(col => (
+              <button
+                key={col.key}
+                onClick={() => setMobileKanbanTab(col.key)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all ${
+                  mobileKanbanTab === col.key ? 'bg-pine-700 text-white' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                <span className={mobileKanbanTab === col.key ? '' : col.color}>{col.label}</span>
+                <span className="text-[10px] bg-gray-700/60 px-1.5 py-0.5 rounded-full">
+                  {kanbanCols.find(c => c.key === col.key)?.tickets.length ?? 0}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Mobile: single active column */}
+          <div className="md:hidden">
+            {kanbanCols.filter(col => col.key === mobileKanbanTab).map(col => (
+              <KanbanColumn
+                key={col.key}
+                column={col}
+                tickets={col.tickets}
+                staffUsers={staffUsers}
+                onUpdate={handleUpdate}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                bulkMode={bulkMode}
+              />
+            ))}
+          </div>
+
+          {/* Desktop: all 3 columns */}
+          <div className="hidden md:grid md:grid-cols-3 gap-4">
+            {kanbanCols.map(col => (
+              <KanbanColumn
+                key={col.key}
+                column={col}
+                tickets={col.tickets}
+                staffUsers={staffUsers}
+                onUpdate={handleUpdate}
+                selectedIds={selectedIds}
+                onToggleSelect={toggleSelect}
+                bulkMode={bulkMode}
+              />
+            ))}
+          </div>
+        </>
       ) : (
         /* ── List ── */
         visible.length === 0 ? (
@@ -502,28 +541,31 @@ export default function TicketList() {
           </div>
         ) : (
           <div className="card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-800/50 border-b border-gray-800 text-left">
-                <tr>
-                  {bulkMode && <th className="pl-4 py-3 w-8" />}
-                  <th className="pl-2 py-3 w-1" />
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">#</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Title</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Submitter</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Category</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Status</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Priority</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Assignee</th>
-                  <th className="px-3 py-3 text-gray-500 font-medium text-xs">Age</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map(t => (
-                  <ListRow key={t.id} ticket={t} selected={selectedIds.has(t.id)} onToggleSelect={toggleSelect}
-                    bulkMode={bulkMode} onQuickUpdate={handleUpdate} staffUsers={staffUsers} />
-                ))}
-              </tbody>
-            </table>
+            {/* Scrollable on mobile */}
+            <div className="overflow-x-auto -webkit-overflow-scrolling-touch">
+              <table className="w-full text-sm min-w-[700px]">
+                <thead className="bg-gray-800/50 border-b border-gray-800 text-left">
+                  <tr>
+                    {bulkMode && <th className="pl-4 py-3 w-8" />}
+                    <th className="pl-2 py-3 w-1" />
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">#</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Title</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Submitter</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Category</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Status</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Priority</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Assignee</th>
+                    <th className="px-3 py-3 text-gray-500 font-medium text-xs">Age</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map(t => (
+                    <ListRow key={t.id} ticket={t} selected={selectedIds.has(t.id)} onToggleSelect={toggleSelect}
+                      bulkMode={bulkMode} onQuickUpdate={handleUpdate} staffUsers={staffUsers} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )
       )}

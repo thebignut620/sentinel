@@ -227,8 +227,8 @@ function HealthScoreWidget() {
     <div className={`card p-6 border ${bgColor}`}>
       <div className="flex flex-col md:flex-row md:items-center gap-6">
         {/* Gauge */}
-        <div className="flex flex-col items-center gap-1 shrink-0">
-          <svg width="140" height="140">
+        <div className="flex flex-col items-center gap-1 shrink-0 mx-auto md:mx-0">
+          <svg width="120" height="120" viewBox="0 0 140 140" className="w-28 h-28 sm:w-36 sm:h-36">
             <circle cx="70" cy="70" r="60" fill="none" stroke="#1f2937" strokeWidth="12" />
             <circle
               cx="70" cy="70" r="60" fill="none"
@@ -252,7 +252,7 @@ function HealthScoreWidget() {
           <h2 className="text-white font-semibold text-base mb-3">System Health Breakdown</h2>
           {Object.entries(data.breakdown).map(([key, b]) => (
             <div key={key} className="flex items-center gap-3 text-sm">
-              <span className="text-gray-400 w-36 shrink-0">{LABELS[key]}</span>
+              <span className="text-gray-400 w-24 sm:w-36 shrink-0 text-xs sm:text-sm">{LABELS[key]}</span>
               <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-700"
@@ -333,29 +333,29 @@ export default function Dashboard() {
       {/* Dot grid background */}
       <div className="fixed inset-0 dot-grid opacity-30 pointer-events-none" />
       {/* Welcome */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      <div className="flex items-start sm:items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">{greeting}, {user.name.split(' ')[0]} 👋</h1>
-          <p className="text-gray-500 text-sm mt-0.5 capitalize">{user.role.replace('_', ' ')} · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">{greeting}, {user.name.split(' ')[0]} 👋</h1>
+          <p className="text-gray-500 text-xs sm:text-sm mt-0.5 capitalize">{user.role.replace('_', ' ')} · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
         </div>
 
         {/* Quick actions */}
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-2 flex-wrap w-full sm:w-auto">
           {user.role === 'employee' ? (
             <>
-              <Link to="/help" className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5">
+              <Link to="/help" className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5 flex-1 sm:flex-none justify-center">
                 <span>+</span> Get AI Help
               </Link>
-              <Link to="/my-tickets" className="btn-secondary px-4 py-2 text-sm">
+              <Link to="/my-tickets" className="btn-secondary px-4 py-2 text-sm flex-1 sm:flex-none text-center">
                 My Tickets
               </Link>
             </>
           ) : (
             <>
-              <Link to="/tickets?status=open" className="btn-primary px-4 py-2 text-sm">
+              <Link to="/tickets?status=open" className="btn-primary px-4 py-2 text-sm flex-1 sm:flex-none text-center">
                 Open Tickets
               </Link>
-              <Link to="/tickets?priority=critical" className="btn-secondary px-4 py-2 text-sm">
+              <Link to="/tickets?priority=critical" className="btn-secondary px-4 py-2 text-sm flex-1 sm:flex-none text-center">
                 Critical
               </Link>
             </>

@@ -85,3 +85,47 @@
   line-height: 1;
 }
 .search-wrap .clear-btn:hover { color: theme('colors.gray.300'); }
+
+/* ── Mobile: prevent iOS zoom on inputs (font-size must be ≥16px) ── */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* ── Touch-friendly: minimum 44px tap targets on mobile ── */
+@media (max-width: 767px) {
+  .btn-primary,
+  .btn-secondary {
+    min-height: 44px;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  /* Scrollable tables on mobile */
+  .table-scroll-mobile {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Admin tables: wrap with overflow-scroll on mobile ── */
+@media (max-width: 767px) {
+  /* Any .card that contains a table gets overflow-x: auto */
+  .card > table,
+  .card > .overflow-hidden > table,
+  .card > div > table {
+    min-width: 600px;
+  }
+  .card > .overflow-hidden {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ── Safe area bottom padding (for iOS home indicator) ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}

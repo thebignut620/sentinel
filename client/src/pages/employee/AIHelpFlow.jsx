@@ -198,7 +198,7 @@ export default function AIHelpFlow() {
   };
 
   return (
-    <div className="max-w-2xl space-y-5 animate-fadeIn">
+    <div className="w-full max-w-2xl mx-auto space-y-5 animate-fadeIn">
       <div>
         <div className="flex items-center gap-2 mb-0.5 flex-wrap">
           <h1 className="text-2xl font-bold text-white">Get IT Help</h1>
@@ -227,19 +227,21 @@ export default function AIHelpFlow() {
           maxLength={2000}
         />
         {step === STEPS.INPUT && (
-          <div className="flex items-center gap-2 mt-3">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-3">
             <SpinnerButton
               onClick={handleAskAI}
               disabled={!problem.trim()}
-              className="btn-primary px-5 py-2.5 text-sm"
+              className="btn-primary px-5 py-3 sm:py-2.5 text-sm w-full sm:w-auto"
             >
               Ask ATLAS →
             </SpinnerButton>
-            <VoiceInput
-              onTranscript={t => setProblem(t)}
-              disabled={step !== STEPS.INPUT}
-            />
-            <span className="text-gray-600 text-xs">or speak your issue</span>
+            <div className="flex items-center gap-2">
+              <VoiceInput
+                onTranscript={t => setProblem(t)}
+                disabled={step !== STEPS.INPUT}
+              />
+              <span className="text-gray-600 text-xs">or speak your issue</span>
+            </div>
           </div>
         )}
       </div>
