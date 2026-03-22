@@ -168,11 +168,10 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* Plan cards — show when trialing/expired/past_due or if they want to upgrade */}
-      {(!isActive || isExpired) && (
-        <div>
+      {/* Plan cards — always shown */}
+      <div>
           <h2 className="text-gray-300 font-semibold text-sm mb-4">
-            {isExpired ? 'Choose a plan to continue' : 'Upgrade your plan'}
+            {isExpired ? 'Choose a plan to continue' : isActive ? 'Change your plan' : 'Upgrade your plan'}
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {PLANS.map(plan => {
@@ -224,11 +223,10 @@ export default function Billing() {
           <p className="text-gray-600 text-xs mt-3 text-center">
             You'll be redirected to Stripe to complete payment securely. No credit card stored on our servers.
           </p>
-        </div>
-      )}
+      </div>
 
-      {/* Active plan — show upgrade option */}
-      {isActive && !isExpired && (
+      {/* Active plan — show portal option only when a real Stripe customer exists */}
+      {isActive && !isExpired && status?.hasStripeCustomer && (
         <div className="bg-gray-800 border border-gray-700 rounded-xl p-5">
           <div className="flex items-center justify-between">
             <div>
