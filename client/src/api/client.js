@@ -81,4 +81,12 @@ api.interceptors.response.use(
   }
 );
 
+// ─── Railway keep-alive — ping every 4 minutes to prevent cold starts ─────────
+// Railway free tier sleeps after ~5 min of inactivity; this keeps the server warm.
+if (typeof window !== 'undefined') {
+  const ping = () => fetch(`${BASE}/ping`).catch(() => {});
+  ping(); // ping on load
+  setInterval(ping, 4 * 60 * 1000); // then every 4 minutes
+}
+
 export default api;

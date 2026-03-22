@@ -10,11 +10,13 @@ import MaintenanceBanner from './components/MaintenanceBanner.jsx';
 import NavProgress from './components/NavProgress.jsx';
 import WelcomeModal from './components/WelcomeModal.jsx';
 
-// Eagerly loaded — core pages users hit immediately
+// Eagerly loaded — core pages and public-facing routes that must never fail to render
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import NotFound from './pages/NotFound.jsx';
+import StatusPage from './pages/StatusPage.jsx';
+import Changelog from './pages/Changelog.jsx';
 
 // Lazily loaded — reduces initial bundle size
 const Signup = lazy(() => import('./pages/Signup.jsx'));
@@ -22,8 +24,6 @@ const Pricing = lazy(() => import('./pages/Pricing.jsx'));
 const Privacy = lazy(() => import('./pages/Privacy.jsx'));
 const Terms = lazy(() => import('./pages/Terms.jsx'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'));
-const StatusPage = lazy(() => import('./pages/StatusPage.jsx'));
-const Changelog = lazy(() => import('./pages/Changelog.jsx'));
 const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase.jsx'));
 const AIHelpFlow = lazy(() => import('./pages/employee/AIHelpFlow.jsx'));
 const MyTickets = lazy(() => import('./pages/employee/MyTickets.jsx'));

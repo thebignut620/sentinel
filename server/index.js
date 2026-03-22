@@ -89,6 +89,9 @@ app.use('/api', apiLimiter);
 // ─── Serve uploaded files ──────────────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// ─── Keep-alive ping — no DB, no auth, instant 200 ───────────────────────────
+app.get('/api/ping', (_req, res) => res.json({ ok: true, t: Date.now() }));
+
 // ─── Public routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/sso', ssoRoutes);

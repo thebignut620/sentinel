@@ -14,10 +14,17 @@ function sanitizeValue(val) {
   return val;
 }
 
+// Fields that must never be sanitized — passwords are hashed/compared as-is,
+// tokens are opaque, and the XSS regex can corrupt them (e.g. strips "onclick=" patterns)
+const SKIP_SANITIZE = new Set([
+  'password', 'currentPassword', 'newPassword', 'confirmPassword',
+  'token', 'totp_code', 'backup_code',
+]);
+
 function sanitizeObject(obj) {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    out[k] = sanitizeValue(v);
+    out[k] = SKIP_SANITIZE.has(k) ? v : sanitizeValue(v);
   }
   return out;
 }
