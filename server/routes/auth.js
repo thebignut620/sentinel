@@ -164,11 +164,15 @@ router.get('/me', authenticate, async (req, res) => {
 // ─── POST /forgot-password ─────────────────────────────────────────────────────
 router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
   const { email } = req.body;
+  console.log('[forgot-password] request received for:', email);
   if (!email) return res.status(400).json({ error: 'Email required' });
 
   const user = await db.get('SELECT * FROM users WHERE email = ? AND is_active = 1', email.toLowerCase().trim());
   // Always respond OK — prevent email enumeration
-  if (!user) return res.json({ ok: true });
+  if (!user) {
+    console.log('[forgot-password] no active user found for email, returning ok silently');
+    return res.json({ ok: true });
+  }
 
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
@@ -178,7 +182,13 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
     user.id, token, expiresAt
   );
 
-  await sendPasswordResetEmail({ to: user.email, name: user.name, token });
+  console.log('[forgot-password] reset token created, attempting to send email to:', user.email);
+  try {
+    await sendPasswordResetEmail({ to: user.email, name: user.name, token });
+    console.log('[forgot-password] email sent successfully to:', user.email);
+  } catch (err) {
+    console.error('[forgot-password] failed to send reset email:', err.message, err.stack);
+  }
   res.json({ ok: true });
 });
 

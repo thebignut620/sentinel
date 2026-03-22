@@ -211,10 +211,11 @@ function KanbanColumn({ column, tickets, staffUsers, onUpdate, selectedIds, onTo
     e.preventDefault();
     setDragOver(false);
     const ticketId = e.dataTransfer.getData('ticketId');
-    const newStatus = column.statuses[0]; // first status in column is the target
-    const ticket = tickets.find(t => String(t.id) === ticketId);
-    if (!ticket || ticket.status === newStatus) return;
-    await onUpdate(Number(ticketId), { status: newStatus });
+    if (!ticketId) return;
+    // Use column.statuses[0] as the drop target status.
+    // Do NOT look up the ticket in `tickets` — that array only holds cards already
+    // in this column, so a card dragged from another column won't be found there.
+    await onUpdate(Number(ticketId), { status: column.statuses[0] });
   };
 
   return (

@@ -4,7 +4,11 @@ import db from '../db/connection.js';
 async function getTransporter() {
   const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
   const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]));
-  if (!cfg.smtp_host || !cfg.smtp_user) return null;
+  if (!cfg.smtp_host || !cfg.smtp_user) {
+    console.warn('[email] SMTP not configured — smtp_host or smtp_user missing from settings table. Email will not send.');
+    return null;
+  }
+  console.log(`[email] SMTP config found: host=${cfg.smtp_host} port=${cfg.smtp_port || 587} user=${cfg.smtp_user}`);
   return nodemailer.createTransport({
     host: cfg.smtp_host,
     port: parseInt(cfg.smtp_port || '587'),
@@ -496,9 +500,13 @@ export async function sendPredictionBriefing({ to, name, briefingText, patterns,
 }
 
 export async function sendPasswordResetEmail({ to, name, token }) {
+  console.log('[email:password-reset] attempting to send to:', to);
   try {
     const transporter = await getTransporter();
-    if (!transporter) return;
+    if (!transporter) {
+      console.warn('[email:password-reset] no transporter — SMTP not configured. Configure smtp_host, smtp_user, smtp_pass in Admin → Settings.');
+      return;
+    }
     const cfg = await getConfig();
     const company = cfg.company_name || 'Sentinel IT';
     const resetUrl = `${BASE_URL}/reset-password/${token}`;
@@ -528,7 +536,9 @@ export async function sendPasswordResetEmail({ to, name, token }) {
       }),
     });
   } catch (err) {
-    console.error('[email] Failed to send reset email:', err.message);
+    console.error('[email:password-reset] failed to send to', to, '—', err.message);
+    console.error('[email:password-reset] full error:', err);
+    throw err; // re-throw so the caller can log it too
   }
 }
 
