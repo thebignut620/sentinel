@@ -36,12 +36,36 @@ async function run(sql, ...params) {
   const hasReturning = /\bRETURNING\b/i.test(trimmed);
 
   if (isInsert && !hasReturning) {
+    const conn = getConn();
+    const inTx = txStore.getStore() != null;
+
+    if (inTx) {
+      // Inside a transaction, a failed query aborts the whole transaction in
+      // PostgreSQL — the plain retry would always fail with "current transaction
+      // is aborted". Use a SAVEPOINT so we can roll back just this attempt.
+      try {
+        await conn.query('SAVEPOINT sp_run');
+        const res = await conn.query(`${converted} RETURNING id`, params);
+        await conn.query('RELEASE SAVEPOINT sp_run');
+        return { lastInsertRowid: res.rows[0]?.id ?? null, changes: res.rowCount ?? 0 };
+      } catch (e) {
+        await conn.query('ROLLBACK TO SAVEPOINT sp_run');
+        await conn.query('RELEASE SAVEPOINT sp_run');
+        if (e.message?.includes('column "id" does not exist')) {
+          const res = await conn.query(converted, params);
+          return { lastInsertRowid: null, changes: res.rowCount ?? 0 };
+        }
+        throw e;
+      }
+    }
+
+    // Outside a transaction — original retry logic is safe
     try {
-      const res = await getConn().query(`${converted} RETURNING id`, params);
+      const res = await conn.query(`${converted} RETURNING id`, params);
       return { lastInsertRowid: res.rows[0]?.id ?? null, changes: res.rowCount ?? 0 };
     } catch (e) {
       if (e.message?.includes('column "id" does not exist')) {
-        const res = await getConn().query(converted, params);
+        const res = await conn.query(converted, params);
         return { lastInsertRowid: null, changes: res.rowCount ?? 0 };
       }
       throw e;
