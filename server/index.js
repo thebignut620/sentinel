@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { runMigrations } from './db/migrate.js';
@@ -37,6 +38,8 @@ import ticketTemplateRoutes from './routes/ticket-templates.js';
 import clusterRoutes from './routes/clusters.js';
 import billingRoutes from './routes/billing.js';
 import { authenticate } from './middleware/auth.js';
+import { sanitizeBody } from './middleware/sanitize.js';
+import { apiLimiter } from './middleware/rateLimiter.js';
 import { startCronJobs } from './services/cron.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -47,25 +50,49 @@ startCronJobs();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
-app.use(cors({ origin: allowedOrigins }));
+// ─── Security headers (helmet) ────────────────────────────────────────────────
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow uploaded file serving
+  contentSecurityPolicy: false, // API server — no CSP needed
+}));
 
-// Stripe webhook needs raw body — must be registered BEFORE express.json()
+// ─── CORS — hardened to known origins ─────────────────────────────────────────
+const ALLOWED_ORIGINS = new Set([
+  'https://sentinelaiapp.com',
+  'https://www.sentinelaiapp.com',
+  'https://sentinel-eta-woad.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:4173',
+]);
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow requests with no origin (curl, Postman, server-to-server)
+    if (!origin) return cb(null, true);
+    if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
+
+// ─── Stripe webhook needs raw body — BEFORE express.json() ────────────────────
 app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
-app.use(express.json());
+// ─── Body parsing + global sanitization ───────────────────────────────────────
+app.use(express.json({ limit: '2mb' }));
+app.use(sanitizeBody);
 
-// Serve uploaded files
+// ─── Global rate limiter (100 req/min per IP) ─────────────────────────────────
+app.use('/api', apiLimiter);
+
+// ─── Serve uploaded files ──────────────────────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Public routes
+// ─── Public routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/sso', ssoRoutes);
 
-// Protected routes
+// ─── Protected routes ──────────────────────────────────────────────────────────
 app.use('/api/ai', authenticate, aiRoutes);
 app.use('/api/tickets', authenticate, ticketRoutes);
 app.use('/api/users', authenticate, userRoutes);
@@ -105,9 +132,17 @@ app.use('/api/notifications', authenticate, notificationRoutes);
 app.use('/api/ticket-templates', ticketTemplateRoutes);
 app.use('/api/clusters', authenticate, clusterRoutes);
 
-// Error handler
+// ─── Global error handler — never expose internals ────────────────────────────
 app.use((err, req, res, _next) => {
-  console.error(err);
+  // Log the full error on the server
+  console.error(`[error] ${req.method} ${req.path}:`, err.message || err);
+
+  // CORS errors get a 403, everything else 500
+  if (err.message?.startsWith('CORS:')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  // Never expose stack traces, DB errors, or file paths to the client
   res.status(500).json({ error: 'Internal server error' });
 });
 

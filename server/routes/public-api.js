@@ -1,44 +1,96 @@
 import express from 'express';
 import db from '../db/connection.js';
 import { validateApiKey } from './api-keys.js';
+import { logAudit } from '../middleware/audit.js';
 
 const router = express.Router();
 
-// Rate limiting middleware
+// Per-key hourly rate limiting (1000 req/hr) + per-minute enforcement
+const HOURLY_LIMIT = 1000;
+const SUSPICIOUS_MULTIPLIER = 5; // auto-disable if 5x the hourly limit
+
 async function rateLimitMiddleware(req, res, next) {
   const keyId = req.apiKey.id;
-  const rateLimit = req.apiKey.rate_limit || 100;
-  const windowStart = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString();
+  const perMinuteLimit = req.apiKey.rate_limit || 100;
+
+  // Per-minute window
+  const minuteWindow = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString();
+  // Per-hour window
+  const hourWindow = new Date(Math.floor(Date.now() / 3600000) * 3600000).toISOString();
 
   try {
-    // Upsert rate limit counter
+    // Upsert per-minute counter
     await db.run(`
       INSERT INTO api_rate_limits (key_id, window_start, request_count)
       VALUES (?, ?, 1)
       ON CONFLICT (key_id, window_start)
       DO UPDATE SET request_count = api_rate_limits.request_count + 1
-    `, keyId, windowStart);
+    `, keyId, minuteWindow);
 
-    const row = await db.get(
-      'SELECT request_count FROM api_rate_limits WHERE key_id = ? AND window_start = ?',
-      keyId, windowStart
-    );
+    // Upsert per-hour counter (use a composite key by appending 'h' to hour window)
+    const hourKey = `${keyId}_h`;
+    await db.run(`
+      INSERT INTO api_rate_limits (key_id, window_start, request_count)
+      VALUES (?, ?, 1)
+      ON CONFLICT (key_id, window_start)
+      DO UPDATE SET request_count = api_rate_limits.request_count + 1
+    `, hourKey, hourWindow);
 
-    if (row && row.request_count > rateLimit) {
-      const retryAfter = 60 - Math.floor((Date.now() % 60000) / 1000);
+    const [minuteRow, hourRow] = await Promise.all([
+      db.get('SELECT request_count FROM api_rate_limits WHERE key_id = ? AND window_start = ?', keyId, minuteWindow),
+      db.get('SELECT request_count FROM api_rate_limits WHERE key_id = ? AND window_start = ?', hourKey, hourWindow),
+    ]);
+
+    const minuteCount = minuteRow?.request_count || 1;
+    const hourCount   = hourRow?.request_count || 1;
+
+    // Auto-disable suspicious key (5× hourly limit)
+    if (hourCount > HOURLY_LIMIT * SUSPICIOUS_MULTIPLIER) {
+      await db.run('UPDATE api_keys SET is_active = 0 WHERE id = ?', keyId);
+      await logAudit(req, {
+        action: 'api_key.auto_disabled',
+        entityType: 'api_key',
+        entityId: keyId,
+        details: { reason: 'suspicious_usage', hourly_requests: hourCount },
+      });
+      return res.status(429).json({ error: 'API key disabled due to suspicious usage patterns.' });
+    }
+
+    // Hourly limit check
+    if (hourCount > HOURLY_LIMIT) {
+      const retryAfter = 3600 - Math.floor((Date.now() % 3600000) / 1000);
       res.set('Retry-After', String(retryAfter));
-      res.set('X-RateLimit-Limit', String(rateLimit));
+      res.set('X-RateLimit-Limit', String(HOURLY_LIMIT));
       res.set('X-RateLimit-Remaining', '0');
+      res.set('X-RateLimit-Reset', String(Math.ceil(Date.now() / 3600000) * 3600));
+      await logAudit(req, {
+        action: 'api_key.rate_limited',
+        entityType: 'api_key',
+        entityId: keyId,
+        details: { window: 'hour', count: hourCount },
+      });
       return res.status(429).json({
-        error: 'Rate limit exceeded',
+        error: 'Hourly rate limit exceeded. Maximum 1000 requests per hour.',
         retry_after: retryAfter,
       });
     }
 
-    res.set('X-RateLimit-Limit', String(rateLimit));
-    res.set('X-RateLimit-Remaining', String(Math.max(0, rateLimit - (row?.request_count || 1))));
+    // Per-minute limit check
+    if (minuteCount > perMinuteLimit) {
+      const retryAfter = 60 - Math.floor((Date.now() % 60000) / 1000);
+      res.set('Retry-After', String(retryAfter));
+      res.set('X-RateLimit-Limit', String(perMinuteLimit));
+      res.set('X-RateLimit-Remaining', '0');
+      return res.status(429).json({
+        error: 'Rate limit exceeded. Please slow down.',
+        retry_after: retryAfter,
+      });
+    }
+
+    res.set('X-RateLimit-Limit', String(HOURLY_LIMIT));
+    res.set('X-RateLimit-Remaining', String(Math.max(0, HOURLY_LIMIT - hourCount)));
     next();
-  } catch (e) {
+  } catch {
     // Don't block the request if rate limit check fails
     next();
   }
@@ -49,10 +101,22 @@ async function apiKeyAuth(req, res, next) {
   const rawKey = req.headers['x-api-key'];
   if (!rawKey) return res.status(401).json({ error: 'X-API-Key header required' });
 
+  // Reject obviously malformed keys early
+  if (typeof rawKey !== 'string' || rawKey.length > 200) {
+    return res.status(401).json({ error: 'Invalid or inactive API key' });
+  }
+
   const apiKey = await validateApiKey(rawKey);
   if (!apiKey) return res.status(401).json({ error: 'Invalid or inactive API key' });
 
   req.apiKey = apiKey;
+  // Log API key usage to audit log (non-blocking)
+  logAudit(req, {
+    action: 'api_key.used',
+    entityType: 'api_key',
+    entityId: apiKey.id,
+    details: { method: req.method, path: req.path },
+  }).catch(() => {});
   next();
 }
 
