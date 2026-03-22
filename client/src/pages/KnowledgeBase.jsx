@@ -200,12 +200,12 @@ export default function KnowledgeBase() {
             <img src={sentinelLogo} alt="Sentinel" className="h-12 w-auto opacity-20" />
             <div>
               <p className="text-gray-400 font-medium">
-                {search || category !== 'all' ? 'No articles match your search.' : 'Knowledge base is empty.'}
+                {search || category !== 'all' ? 'Nothing found for that search.' : 'The knowledge base is empty right now.'}
               </p>
               <p className="text-gray-600 text-sm mt-1">
                 {search || category !== 'all'
                   ? 'Try different keywords or browse all categories.'
-                  : 'Articles are generated automatically as tickets are resolved.'}
+                  : 'ATLAS builds articles automatically as tickets get resolved — check back soon.'}
               </p>
             </div>
             {(search || category !== 'all') && (

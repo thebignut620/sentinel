@@ -37,6 +37,7 @@ import notificationRoutes from './routes/notifications.js';
 import ticketTemplateRoutes from './routes/ticket-templates.js';
 import clusterRoutes from './routes/clusters.js';
 import billingRoutes from './routes/billing.js';
+import statusRoutes from './routes/status.js';
 import { authenticate } from './middleware/auth.js';
 import { sanitizeBody } from './middleware/sanitize.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
@@ -91,6 +92,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 // ─── Public routes ─────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/sso', ssoRoutes);
+app.use('/api/status', statusRoutes);
 
 // ─── Protected routes ──────────────────────────────────────────────────────────
 app.use('/api/ai', authenticate, aiRoutes);

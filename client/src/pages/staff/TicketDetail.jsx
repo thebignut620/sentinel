@@ -8,6 +8,8 @@ import Confetti from '../../components/Confetti.jsx';
 import SmartTextarea from '../../components/SmartTextarea.jsx';
 import SpinnerButton from '../../components/SpinnerButton.jsx';
 import SentimentBadge from '../../components/SentimentBadge.jsx';
+import { soundResolved, soundClick } from '../../hooks/useSound.js';
+import { useMilestone, shouldShowConfetti } from '../../hooks/useMilestone.js';
 import api from '../../api/client.js';
 
 // ── ATLAS Action Approval Card ────────────────────────────────────────────────
@@ -498,6 +500,7 @@ export default function TicketDetail() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { checkResolved } = useMilestone();
   const fileInputRef = useRef(null);
   const commentBoxRef = useRef(null);
 
@@ -562,7 +565,8 @@ export default function TicketDetail() {
   const handleUpdate = async () => {
     setSubmitting(true);
     try {
-      const wasNotResolved = ticket?.status !== 'resolved' && ticket?.priority === 'critical';
+      const wasNotResolved = ticket?.status !== 'resolved';
+      const wasCritical = ticket?.priority === 'critical';
       const patch = {
         status: editStatus, priority: editPriority,
         category: editCategory, assignee_id: editAssignee || null,
@@ -571,14 +575,40 @@ export default function TicketDetail() {
         patch.solution = solution.trim();
       }
       await api.patch(`/tickets/${id}`, patch);
-      addToast('Ticket updated', 'success');
+      addToast('Ticket updated successfully', 'success');
       setUpdateSuccess(true);
       setTimeout(() => setUpdateSuccess(false), 2000);
-      // Confetti when critical ticket gets resolved
-      if (wasNotResolved && editStatus === 'resolved') setShowConfetti(true);
+
+      // Sound + milestone check when ticket is resolved
+      if (wasNotResolved && editStatus === 'resolved') {
+        soundResolved();
+        // Fetch total resolved count for milestones
+        try {
+          const stats = await api.get('/analytics/summary').catch(() => null);
+          const resolvedCount = stats?.data?.resolved_total ?? 1;
+          const milestone = checkResolved(resolvedCount);
+          if (shouldShowConfetti(milestone)) {
+            setShowConfetti(true);
+          } else if (wasCritical) {
+            // Legacy: always confetti for critical resolutions
+            setShowConfetti(true);
+          }
+          if (milestone === '100') {
+            addToast('🏆 100 tickets resolved! Your team is on fire.', 'success');
+          } else if (milestone === 'first') {
+            addToast('🎉 First ticket resolved! ATLAS is learning.', 'success');
+          }
+        } catch {
+          // Milestone fetch failed — still show confetti for critical
+          if (wasCritical) setShowConfetti(true);
+        }
+      } else {
+        soundClick();
+      }
+
       await loadAll();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Update failed', 'error');
+      addToast(err.response?.data?.error || 'Something went wrong. Try again.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -989,7 +1019,7 @@ export default function TicketDetail() {
                   success={updateSuccess}
                   className="btn-primary w-full py-2.5 text-sm"
                 >
-                  Save Changes
+                  Update ticket
                 </SpinnerButton>
               </div>
             </div>

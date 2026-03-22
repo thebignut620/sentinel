@@ -3,6 +3,9 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import sentinelLogo from '../assets/sentinel_logo.png';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import IncidentBanner from './IncidentBanner.jsx';
+import AppFooter from './AppFooter.jsx';
+import KeyboardShortcutsModal from './KeyboardShortcutsModal.jsx';
+import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts.js';
 import api from '../api/client.js';
 
 function TrialBanner({ status }) {
@@ -314,7 +317,10 @@ export default function Layout() {
   const [openTickets, setOpenTickets] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
   const [billingStatus, setBillingStatus] = useState(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const { pathname } = useLocation();
+
+  useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(true), userRole: user?.role });
 
   useEffect(() => {
     localStorage.setItem('sidebar_collapsed', collapsed);
@@ -475,6 +481,17 @@ export default function Layout() {
             )}
           </div>
 
+          {/* Keyboard shortcuts hint */}
+          {!collapsed && (
+            <button
+              onClick={() => setShowShortcuts(true)}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-gray-600 hover:bg-gray-800 hover:text-gray-400 transition-all duration-200 text-sm"
+            >
+              <kbd className="inline-flex items-center justify-center w-4 h-4 bg-gray-700 border border-gray-600 rounded text-[9px] font-mono shrink-0">?</kbd>
+              <span>Keyboard shortcuts</span>
+            </button>
+          )}
+
           {/* Logout */}
           <div className="relative group">
             <button
@@ -497,7 +514,7 @@ export default function Layout() {
       </aside>
 
       {/* Main — extra bottom padding on mobile for the bottom nav */}
-      <main className="flex-1 overflow-auto flex flex-col min-w-0">
+      <main id="main-content" className="flex-1 overflow-auto flex flex-col min-w-0">
         <IncidentBanner />
         {user?.role === 'admin' && <TrialBanner status={billingStatus} />}
         {billingStatus?.isExpired && pathname !== '/admin/billing'
@@ -508,10 +525,14 @@ export default function Layout() {
             </div>
           )
         }
+        <AppFooter />
       </main>
 
       {/* Mobile bottom navigation bar */}
       <MobileBottomNav user={user} unreadNotifs={unreadNotifs} />
+
+      {/* Keyboard shortcuts modal */}
+      {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
     </div>
   );
 }

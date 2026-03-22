@@ -188,10 +188,10 @@ export default function AIHelpFlow() {
       setCreatedTicketId(res.data.id);
       setSubmitSuccess(true);
       setTimeout(() => { setSubmitSuccess(false); setStep(STEPS.DONE); }, 800);
-      addToast(`Ticket #${res.data.id} created!`, 'success');
+      addToast(`Ticket #${res.data.id} created — IT is on it!`, 'success');
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create ticket');
-      addToast('Failed to create ticket', 'error');
+      setError(err.response?.data?.error || 'Something went wrong. Please try again.');
+      addToast('Could not create ticket — please try again', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -348,7 +348,7 @@ export default function AIHelpFlow() {
               <p className="text-sm text-amber-300 mb-1">No matching articles found</p>
               <p className="text-xs text-gray-500 mb-4">ATLAS will create one automatically when your ticket is resolved.</p>
               <button onClick={() => setStep(STEPS.TICKET)} className="btn-primary px-5 py-2.5 text-sm">
-                Submit a Ticket →
+                Get IT support →
               </button>
             </div>
           )}
@@ -426,7 +426,7 @@ export default function AIHelpFlow() {
                 success={submitSuccess}
                 className="btn-primary px-5 py-2.5 text-sm"
               >
-                Submit Ticket
+                Open a support ticket
               </SpinnerButton>
               <button
                 onClick={() => setStep(STEPS.KB)}

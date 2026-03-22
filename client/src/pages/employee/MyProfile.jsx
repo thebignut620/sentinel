@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
 import SpinnerButton from '../../components/SpinnerButton.jsx';
+import { isSoundEnabled, toggleSound } from '../../hooks/useSound.js';
 import api from '../../api/client.js';
 
 const DEVICE_OPTIONS = ['Windows PC', 'Mac', 'Linux PC', 'Windows Laptop', 'MacBook', 'Chromebook'];
@@ -29,6 +30,7 @@ export default function MyProfile() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [soundOn, setSoundOn] = useState(isSoundEnabled);
   const [form, setForm] = useState({
     department: '',
     device_type: '',
@@ -147,6 +149,28 @@ export default function MyProfile() {
             placeholder="e.g. I'm on the remote team so VPN is always relevant…"
             maxLength={300}
           />
+        </div>
+      </div>
+
+      {/* Sound preferences */}
+      <div className="card p-6">
+        <h3 className="text-base font-semibold text-gray-200 mb-4">Preferences</h3>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-300">Sound effects</p>
+            <p className="text-xs text-gray-600 mt-0.5">Subtle sounds on ticket updates and milestones</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={soundOn}
+            onClick={() => { const next = toggleSound(); setSoundOn(next); }}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-pine-500 focus:ring-offset-2 focus:ring-offset-gray-900 ${soundOn ? 'bg-pine-600' : 'bg-gray-700'}`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${soundOn ? 'translate-x-6' : 'translate-x-1'}`}
+            />
+          </button>
         </div>
       </div>
 

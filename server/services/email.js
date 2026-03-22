@@ -20,6 +20,92 @@ async function getConfig() {
 
 const BASE_URL = process.env.CLIENT_URL || 'http://localhost:5173';
 
+// ─── Shared HTML shell ────────────────────────────────────────────────────────
+function emailShell({ company, title, previewText, body, footerText = '' }) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="dark">
+  <title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <!-- Preview text (hidden) -->
+  <span style="display:none;max-height:0;overflow:hidden;mso-hide:all;">${previewText}</span>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" style="max-width:600px;background:#111;border:1px solid #1f2937;border-radius:16px;overflow:hidden;">
+
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0f2010,#1a3a1a,#0f2010);padding:24px 32px;border-bottom:1px solid #1a3a1a;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td>
+                    <div style="display:inline-flex;align-items:center;gap:10px;">
+                      <div style="width:32px;height:32px;background:#2d6a2d;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;line-height:32px;text-align:center;">🛡️</div>
+                      <div>
+                        <div style="font-size:16px;font-weight:700;color:#fff;letter-spacing:-0.3px;">${company}</div>
+                        <div style="font-size:10px;color:#4aaa4a;text-transform:uppercase;letter-spacing:1.5px;">IT Helpdesk</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td align="right">
+                    <div style="font-size:10px;color:#374151;text-transform:uppercase;letter-spacing:1px;">ATLAS</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px;">
+              ${body}
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="padding:20px 32px;border-top:1px solid #1f2937;background:#0d0d0d;">
+              <p style="margin:0;font-size:11px;color:#374151;text-align:center;line-height:1.6;">
+                ${footerText || `You're receiving this from ${company} IT Support.`}<br>
+                <a href="${BASE_URL}" style="color:#4a7a4a;text-decoration:none;">Sentinel IT Helpdesk</a>
+                &nbsp;·&nbsp;
+                <a href="${BASE_URL}/status" style="color:#4a7a4a;text-decoration:none;">System Status</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
+
+// ─── Shared UI primitives ─────────────────────────────────────────────────────
+function emailButton(href, label, color = '#2d6a2d') {
+  return `<a href="${href}"
+    style="display:inline-block;background:${color};color:#fff;padding:12px 28px;border-radius:10px;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:-0.2px;">
+    ${label} →
+  </a>`;
+}
+
+function emailInfoBox(rows) {
+  const inner = rows.map(([label, val, highlight]) => `
+    <tr>
+      <td style="padding:8px 16px;border-bottom:1px solid #1f2937;font-size:12px;color:#6b7280;white-space:nowrap;">${label}</td>
+      <td style="padding:8px 16px;border-bottom:1px solid #1f2937;font-size:13px;color:${highlight ? '#4aaa4a' : '#e5e7eb'};font-weight:${highlight ? '600' : '400'};text-transform:${highlight ? 'capitalize' : 'none'};">${val}</td>
+    </tr>
+  `).join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d0d;border:1px solid #1f2937;border-radius:10px;overflow:hidden;margin:20px 0;">${inner}</table>`;
+}
+
 export async function sendTicketStatusEmail({ to, name, ticketId, title, newStatus }) {
   try {
     const transporter = await getTransporter();
@@ -27,31 +113,40 @@ export async function sendTicketStatusEmail({ to, name, ticketId, title, newStat
     const cfg = await getConfig();
     const company = cfg.company_name || 'Sentinel IT';
     const statusLabel = newStatus.replace('_', ' ');
+    const isResolved = ['resolved', 'closed'].includes(newStatus);
+
+    const body = `
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#fff;">
+        ${isResolved ? '✅ Your ticket has been resolved' : '🔔 Ticket status update'}
+      </h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#9ca3af;">Hi <strong style="color:#e5e7eb;">${name}</strong>, here's the latest on your request.</p>
+
+      ${emailInfoBox([
+        ['Ticket', `#${ticketId} — ${title}`],
+        ['Status', statusLabel, true],
+      ])}
+
+      <p style="margin:0 0 24px;font-size:13px;color:#6b7280;line-height:1.6;">
+        ${isResolved
+          ? 'We hope this resolved your issue. If you need any further assistance, feel free to open a new request.'
+          : 'Our team is working on your request. We\'ll keep you posted on any updates.'}
+      </p>
+
+      ${emailButton(`${BASE_URL}/tickets/${ticketId}`, 'View ticket')}
+    `;
+
     await transporter.sendMail({
       from: cfg.smtp_from || cfg.smtp_user,
       to,
-      subject: `[${company}] Ticket #${ticketId} — Status updated to "${statusLabel}"`,
-      html: `
-        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
-          <div style="background:#2d6a2d;padding:20px 32px;">
-            <h1 style="margin:0;font-size:20px;color:#fff;">${company}</h1>
-          </div>
-          <div style="padding:32px;">
-            <h2 style="margin-top:0;color:#fff;">Ticket Status Update</h2>
-            <p>Hi <strong>${name}</strong>,</p>
-            <p>Your ticket has been updated:</p>
-            <div style="background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:16px;margin:20px 0;">
-              <p style="margin:0 0 8px;"><strong>Ticket:</strong> #${ticketId} — ${title}</p>
-              <p style="margin:0;"><strong>New Status:</strong> <span style="color:#4aaa4a;text-transform:capitalize;">${statusLabel}</span></p>
-            </div>
-            <a href="${BASE_URL}/tickets/${ticketId}"
-               style="display:inline-block;background:#2d6a2d;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">
-              View Ticket
-            </a>
-            <p style="margin-top:32px;color:#888;font-size:13px;">— ${company} Support Team</p>
-          </div>
-        </div>
-      `,
+      subject: isResolved
+        ? `✅ Resolved: ${title} (#${ticketId})`
+        : `[${company}] Ticket #${ticketId} — ${statusLabel}`,
+      html: emailShell({
+        company,
+        title: `Ticket #${ticketId} update`,
+        previewText: `Your ticket #${ticketId} status changed to ${statusLabel}`,
+        body,
+      }),
     });
   } catch (err) {
     console.error('[email] Failed to send status email:', err.message);
@@ -407,28 +502,30 @@ export async function sendPasswordResetEmail({ to, name, token }) {
     const cfg = await getConfig();
     const company = cfg.company_name || 'Sentinel IT';
     const resetUrl = `${BASE_URL}/reset-password/${token}`;
+
+    const body = `
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#fff;">🔑 Reset your password</h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#9ca3af;">Hi <strong style="color:#e5e7eb;">${name}</strong>, we got your reset request.</p>
+      <p style="font-size:14px;color:#6b7280;line-height:1.6;margin:0 0 24px;">
+        Click the button below to choose a new password. This link expires in <strong style="color:#e5e7eb;">1 hour</strong>.
+      </p>
+      ${emailButton(resetUrl, 'Set new password')}
+      <p style="margin-top:24px;font-size:12px;color:#4b5563;line-height:1.6;">
+        Didn't request this? You can safely ignore this email. Your password won't change.
+      </p>
+    `;
+
     await transporter.sendMail({
       from: cfg.smtp_from || cfg.smtp_user,
       to,
-      subject: `[${company}] Password Reset Request`,
-      html: `
-        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
-          <div style="background:#2d6a2d;padding:20px 32px;">
-            <h1 style="margin:0;font-size:20px;color:#fff;">${company}</h1>
-          </div>
-          <div style="padding:32px;">
-            <h2 style="margin-top:0;color:#fff;">Password Reset</h2>
-            <p>Hi <strong>${name}</strong>,</p>
-            <p>We received a request to reset your password. Click the button below to set a new one.</p>
-            <a href="${resetUrl}"
-               style="display:inline-block;background:#2d6a2d;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;margin:16px 0;">
-              Reset My Password
-            </a>
-            <p style="color:#888;font-size:13px;">This link expires in 1 hour. If you did not request a reset, you can safely ignore this email.</p>
-            <p style="margin-top:32px;color:#888;font-size:13px;">— ${company} Support Team</p>
-          </div>
-        </div>
-      `,
+      subject: `Reset your ${company} password`,
+      html: emailShell({
+        company,
+        title: 'Password Reset',
+        previewText: 'Someone requested a password reset for your account.',
+        body,
+        footerText: `For security, this link expires in 1 hour. If you didn't request this, ignore this email.`,
+      }),
     });
   } catch (err) {
     console.error('[email] Failed to send reset email:', err.message);
@@ -439,41 +536,59 @@ export async function sendWelcomeEmail({ to, name, companyName, trialEnd }) {
   try {
     const transporter = await getTransporter();
     if (!transporter) return;
+    const cfg = await getConfig();
     const trialDate = new Date(trialEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     const dashUrl = `${BASE_URL}/dashboard`;
+
+    const body = `
+      <h2 style="margin:0 0 4px;font-size:22px;font-weight:700;color:#fff;">Welcome aboard, ${name}! 🎉</h2>
+      <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Your 14-day free trial for <strong style="color:#e5e7eb;">${companyName}</strong> is live. No credit card needed.</p>
+
+      <div style="background:#0d1a0d;border:1px solid #1a4a1a;border-radius:12px;padding:20px;margin:0 0 24px;">
+        <p style="margin:0 0 12px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;color:#4aaa4a;">Trial active until ${trialDate}</p>
+        <p style="margin:0;font-size:13px;color:#6b7280;">Upgrade anytime from your billing dashboard to keep access and unlock unlimited users.</p>
+      </div>
+
+      <p style="margin:0 0 12px;font-size:14px;font-weight:600;color:#d1d5db;">Get started in 3 steps:</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:0 0 28px;">
+        ${[
+          ['1', 'Set up your company profile and SMTP settings', `${BASE_URL}/admin/company-profile`],
+          ['2', 'Invite your IT staff and employees', `${BASE_URL}/admin/users`],
+          ['3', 'Submit a test ticket and watch ATLAS work its magic', `${BASE_URL}/help`],
+        ].map(([num, text, link]) => `
+          <tr>
+            <td style="padding:8px 0;vertical-align:top;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="width:28px;height:28px;background:#1a3a1a;border-radius:50%;text-align:center;vertical-align:middle;font-size:12px;font-weight:700;color:#4aaa4a;padding-right:12px;">${num}</td>
+                  <td style="font-size:13px;color:#9ca3af;line-height:1.5;">
+                    ${text} — <a href="${link}" style="color:#4aaa4a;text-decoration:none;">Go →</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        `).join('')}
+      </table>
+
+      ${emailButton(dashUrl, 'Open my dashboard')}
+
+      <p style="margin-top:24px;font-size:12px;color:#4b5563;line-height:1.6;">
+        Questions? Just reply to this email — we read every one.
+      </p>
+    `;
+
     await transporter.sendMail({
-      from: (await getConfig()).smtp_from || (await getConfig()).smtp_user,
+      from: cfg.smtp_from || cfg.smtp_user,
       to,
-      subject: `Welcome to Sentinel — your 14-day trial has started`,
-      html: `
-        <div style="font-family:system-ui,sans-serif;max-width:600px;margin:0 auto;background:#0d0d0d;color:#e5e5e5;border-radius:12px;overflow:hidden;">
-          <div style="background:#2d6a2d;padding:24px 32px;">
-            <h1 style="margin:0;font-size:22px;color:#fff;">Welcome to Sentinel</h1>
-            <p style="margin:6px 0 0;color:#a7f3a7;font-size:14px;">AI-powered IT helpdesk</p>
-          </div>
-          <div style="padding:32px;">
-            <h2 style="margin-top:0;color:#fff;">Hi ${name}, you're all set!</h2>
-            <p>Your 14-day free trial for <strong>${companyName}</strong> is now active. No credit card required.</p>
-            <div style="background:#1a1a1a;border:1px solid #2d6a2d;border-radius:8px;padding:16px;margin:20px 0;">
-              <p style="margin:0 0 6px;color:#4aaa4a;font-weight:600;">Trial Details</p>
-              <p style="margin:0;font-size:14px;">Expires: <strong>${trialDate}</strong></p>
-              <p style="margin:4px 0 0;font-size:13px;color:#888;">Upgrade anytime to keep access.</p>
-            </div>
-            <p style="margin-bottom:6px;font-weight:600;color:#ccc;">Getting started:</p>
-            <ol style="color:#aaa;font-size:14px;line-height:1.8;padding-left:20px;">
-              <li>Set up your company profile and SMTP email settings</li>
-              <li>Invite your IT staff and employees</li>
-              <li>Submit your first ticket and watch ATLAS analyze it</li>
-            </ol>
-            <a href="${dashUrl}"
-               style="display:inline-block;background:#2d6a2d;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:20px;">
-              Open Dashboard
-            </a>
-            <p style="margin-top:32px;color:#888;font-size:13px;">Questions? Reply to this email and we'll help you get set up.</p>
-            <p style="color:#888;font-size:13px;">— The Sentinel Team</p>
-          </div>
-        </div>
-      `,
+      subject: `Welcome to Sentinel — your free trial is live 🚀`,
+      html: emailShell({
+        company: 'Sentinel',
+        title: 'Welcome to Sentinel',
+        previewText: `Your 14-day free trial for ${companyName} is now active. No credit card required.`,
+        body,
+        footerText: `You're receiving this because you signed up for Sentinel IT Helpdesk.`,
+      }),
     });
   } catch (err) {
     console.error('[email] Failed to send welcome email:', err.message);

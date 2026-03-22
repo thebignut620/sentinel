@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx';
@@ -9,42 +9,49 @@ import OfflineBanner from './components/OfflineBanner.jsx';
 import MaintenanceBanner from './components/MaintenanceBanner.jsx';
 import NavProgress from './components/NavProgress.jsx';
 import WelcomeModal from './components/WelcomeModal.jsx';
+
+// Eagerly loaded — core pages users hit immediately
 import Landing from './pages/Landing.jsx';
 import Login from './pages/Login.jsx';
-import Signup from './pages/Signup.jsx';
-import Pricing from './pages/Pricing.jsx';
-import Privacy from './pages/Privacy.jsx';
-import Terms from './pages/Terms.jsx';
-import ResetPassword from './pages/ResetPassword.jsx';
-import NotFound from './pages/NotFound.jsx';
-import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import Dashboard from './pages/Dashboard.jsx';
-import AIHelpFlow from './pages/employee/AIHelpFlow.jsx';
-import MyTickets from './pages/employee/MyTickets.jsx';
-import MyProfile from './pages/employee/MyProfile.jsx';
-import TicketList from './pages/staff/TicketList.jsx';
-import TicketDetail from './pages/staff/TicketDetail.jsx';
-import UserManagement from './pages/admin/UserManagement.jsx';
-import AdminSettings from './pages/admin/AdminSettings.jsx';
-import OnboardingWizard from './pages/admin/OnboardingWizard.jsx';
-import CompanyProfile from './pages/admin/CompanyProfile.jsx';
-import Integrations from './pages/admin/Integrations.jsx';
-import Departments from './pages/admin/Departments.jsx';
-import Assets from './pages/admin/Assets.jsx';
-import Maintenance from './pages/admin/Maintenance.jsx';
-import CustomFields from './pages/admin/CustomFields.jsx';
-import AuditLog from './pages/admin/AuditLog.jsx';
-import Permissions from './pages/admin/Permissions.jsx';
-import TwoFactorSetup from './pages/admin/TwoFactorSetup.jsx';
-import SsoCallback from './pages/SsoCallback.jsx';
-import ApiKeys from './pages/admin/ApiKeys.jsx';
-import ApiDocs from './pages/ApiDocs.jsx';
-import Analytics from './pages/admin/Analytics.jsx';
-import SurveyFeedback from './pages/SurveyFeedback.jsx';
-import Templates from './pages/admin/Templates.jsx';
-import Clusters from './pages/admin/Clusters.jsx';
-import Billing from './pages/admin/Billing.jsx';
-import NotificationPreferences from './pages/NotificationPreferences.jsx';
+import NotFound from './pages/NotFound.jsx';
+
+// Lazily loaded — reduces initial bundle size
+const Signup = lazy(() => import('./pages/Signup.jsx'));
+const Pricing = lazy(() => import('./pages/Pricing.jsx'));
+const Privacy = lazy(() => import('./pages/Privacy.jsx'));
+const Terms = lazy(() => import('./pages/Terms.jsx'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword.jsx'));
+const StatusPage = lazy(() => import('./pages/StatusPage.jsx'));
+const Changelog = lazy(() => import('./pages/Changelog.jsx'));
+const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase.jsx'));
+const AIHelpFlow = lazy(() => import('./pages/employee/AIHelpFlow.jsx'));
+const MyTickets = lazy(() => import('./pages/employee/MyTickets.jsx'));
+const MyProfile = lazy(() => import('./pages/employee/MyProfile.jsx'));
+const TicketList = lazy(() => import('./pages/staff/TicketList.jsx'));
+const TicketDetail = lazy(() => import('./pages/staff/TicketDetail.jsx'));
+const UserManagement = lazy(() => import('./pages/admin/UserManagement.jsx'));
+const AdminSettings = lazy(() => import('./pages/admin/AdminSettings.jsx'));
+const OnboardingWizard = lazy(() => import('./pages/admin/OnboardingWizard.jsx'));
+const CompanyProfile = lazy(() => import('./pages/admin/CompanyProfile.jsx'));
+const Integrations = lazy(() => import('./pages/admin/Integrations.jsx'));
+const Departments = lazy(() => import('./pages/admin/Departments.jsx'));
+const Assets = lazy(() => import('./pages/admin/Assets.jsx'));
+const Maintenance = lazy(() => import('./pages/admin/Maintenance.jsx'));
+const CustomFields = lazy(() => import('./pages/admin/CustomFields.jsx'));
+const AuditLog = lazy(() => import('./pages/admin/AuditLog.jsx'));
+const Permissions = lazy(() => import('./pages/admin/Permissions.jsx'));
+const TwoFactorSetup = lazy(() => import('./pages/admin/TwoFactorSetup.jsx'));
+const SsoCallback = lazy(() => import('./pages/SsoCallback.jsx'));
+const ApiKeys = lazy(() => import('./pages/admin/ApiKeys.jsx'));
+const ApiDocs = lazy(() => import('./pages/ApiDocs.jsx'));
+const Analytics = lazy(() => import('./pages/admin/Analytics.jsx'));
+const SurveyFeedback = lazy(() => import('./pages/SurveyFeedback.jsx'));
+const Templates = lazy(() => import('./pages/admin/Templates.jsx'));
+const Clusters = lazy(() => import('./pages/admin/Clusters.jsx'));
+const Billing = lazy(() => import('./pages/admin/Billing.jsx'));
+const NotificationPreferences = lazy(() => import('./pages/NotificationPreferences.jsx'));
+
 import api from './api/client.js';
 
 // Root: Landing for guests, redirect to dashboard for authenticated users
@@ -126,6 +133,7 @@ function AppInner() {
       <NavProgress />
       <WelcomeGate />
       <OnboardingGate />
+      <Suspense fallback={<AppLoader />}>
       <Routes>
         {/* Root: Landing for guests */}
         <Route path="/" element={<LandingOrDashboard />} />
@@ -140,6 +148,8 @@ function AppInner() {
         <Route path="/reset-password/:token" element={<ResetPassword />} />
         <Route path="/api-docs" element={<ApiDocs />} />
         <Route path="/survey/:token" element={<SurveyFeedback />} />
+        <Route path="/status" element={<StatusPage />} />
+        <Route path="/changelog" element={<Changelog />} />
 
         {/* Onboarding wizard — full screen, no sidebar */}
         <Route
@@ -194,6 +204,7 @@ function AppInner() {
 
         <Route path="*" element={<NotFound />} />
       </Routes>
+      </Suspense>
     </>
   );
 }
@@ -203,6 +214,13 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
+          {/* Accessibility: skip to main content */}
+          <a
+            href="#main-content"
+            className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-pine-700 focus:text-white focus:rounded-lg focus:text-sm focus:font-medium"
+          >
+            Skip to main content
+          </a>
           <SessionWatcher />
           <AppInner />
         </BrowserRouter>
