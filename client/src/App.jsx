@@ -2,6 +2,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext.jsx';
 import { ToastProvider, useToast } from './contexts/ToastContext.jsx';
+import { SessionProvider } from './contexts/SessionContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from './components/Layout.jsx';
 import AppLoader from './components/AppLoader.jsx';
@@ -219,6 +220,7 @@ export default function App() {
   return (
     <AuthProvider>
       <ToastProvider>
+        <SessionProvider>
         <BrowserRouter>
           {/* Accessibility: skip to main content */}
           <a
@@ -230,6 +232,7 @@ export default function App() {
           <SessionWatcher />
           <AppInner />
         </BrowserRouter>
+        </SessionProvider>
       </ToastProvider>
     </AuthProvider>
   );

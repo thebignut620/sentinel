@@ -6,6 +6,7 @@ import SearchInput from '../../components/SearchInput.jsx';
 import SentimentBadge from '../../components/SentimentBadge.jsx';
 import sentinelLogo from '../../assets/sentinel_logo.png';
 import api from '../../api/client.js';
+import { useSession } from '../../contexts/SessionContext.jsx';
 
 const PRIORITY_STRIP = { critical: 'bg-red-500', high: 'bg-orange-500', medium: 'bg-yellow-500', low: 'bg-gray-600' };
 const CATEGORY_ICONS = { hardware:'🖥', software:'💾', network:'🌐', access:'🔑', account:'👤' };
@@ -26,14 +27,17 @@ function initials(name = '') {
 }
 
 export default function MyTickets() {
+  const { sessionStart } = useSession();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter]   = useState('all');
   const [search, setSearch]   = useState('');
 
   useEffect(() => {
-    api.get('/tickets').then(r => setTickets(r.data)).finally(() => setLoading(false));
-  }, []);
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    console.log('[MyTickets] fetching /tickets — session_start:', sessionStart ?? 'none');
+    api.get('/tickets', { params }).then(r => setTickets(r.data)).finally(() => setLoading(false));
+  }, [sessionStart]);
 
   const filtered = tickets
     .filter(t => filter === 'all' || t.status === filter)

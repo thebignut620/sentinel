@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import sentinelLogo from '../assets/sentinel_logo.png';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useSession } from '../contexts/SessionContext.jsx';
 import IncidentBanner from './IncidentBanner.jsx';
 import AppFooter from './AppFooter.jsx';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal.jsx';
@@ -312,6 +313,7 @@ function Avatar({ name }) {
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { sessionStart } = useSession();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(() => {
     return localStorage.getItem('sidebar_collapsed') === 'true';
@@ -333,9 +335,11 @@ export default function Layout() {
 
   useEffect(() => {
     if (user?.role !== 'employee') {
-      api.get('/tickets?status=open').then(r => setOpenTickets(r.data.length)).catch(() => {});
+      const params = new URLSearchParams({ status: 'open' });
+      if (sessionStart) params.set('session_start', sessionStart);
+      api.get(`/tickets?${params}`).then(r => setOpenTickets(r.data.length)).catch(() => {});
     }
-  }, [user]);
+  }, [user, sessionStart]);
 
   useEffect(() => {
     if (user?.role === 'admin') {

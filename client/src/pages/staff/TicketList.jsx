@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext.jsx';
+import { useSession } from '../../contexts/SessionContext.jsx';
 import { StatusBadge, PriorityBadge, CategoryBadge } from '../../components/Badges.jsx';
 import { SkeletonTable } from '../../components/Skeleton.jsx';
 import { useToast } from '../../contexts/ToastContext.jsx';
@@ -323,6 +324,7 @@ function ListRow({ ticket, selected, onToggleSelect, bulkMode, onQuickUpdate, st
 export default function TicketList() {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const { sessionStart } = useSession();
   const [tickets, setTickets]     = useState([]);
   const [staffUsers, setStaff]    = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -337,8 +339,10 @@ export default function TicketList() {
 
   const load = useCallback(async () => {
     try {
+      const ticketParams = sessionStart ? { session_start: sessionStart } : {};
+      console.log('[TicketList] fetching /tickets — session_start:', sessionStart ?? 'none (all-time)', '| params:', JSON.stringify(ticketParams));
       const [tRes, uRes] = await Promise.all([
-        api.get('/tickets'),
+        api.get('/tickets', { params: ticketParams }),
         api.get('/users'),
       ]);
       console.log('[TicketList] tickets response:', tRes.status, 'count:', tRes.data?.length, 'role:', user?.role);
@@ -350,7 +354,7 @@ export default function TicketList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionStart]); // re-fetch when session changes
 
   useEffect(() => { load(); }, [load]);
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useToast } from '../contexts/ToastContext.jsx';
+import { useSession } from '../contexts/SessionContext.jsx';
 import { StatusBadge, PriorityBadge } from '../components/Badges.jsx';
 import { SkeletonStatCards, SkeletonCard } from '../components/Skeleton.jsx';
 import api from '../api/client.js';
@@ -389,34 +390,13 @@ function StartSessionModal({ onClose, onSuccess }) {
 export default function Dashboard() {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const { currentSession, sessionStart, sessionLoaded, startSession } = useSession();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
-  const [currentSession, setCurrentSession]     = useState(null);
-  const [sessionStart, setSessionStart]         = useState(null);
-  // For employees, skip session fetch entirely
-  const [sessionLoaded, setSessionLoaded]       = useState(user?.role === 'employee');
 
-  // 1. Fetch active session (admin/staff only) — runs once on mount
-  useEffect(() => {
-    if (user?.role === 'employee') return;
-    api.get('/sessions')
-      .then(r => {
-        if (r.data?.length > 0) {
-          const s = r.data[0];
-          console.log('[Dashboard] active session loaded:', s.name, '| started_at:', s.started_at);
-          setCurrentSession(s);
-          setSessionStart(s.started_at);
-        } else {
-          console.log('[Dashboard] no active session — fetching all-time data');
-        }
-      })
-      .catch(() => {})
-      .finally(() => setSessionLoaded(true));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 2. Fetch dashboard stats — waits for session check, re-runs when sessionStart changes
+  // Fetch dashboard stats — waits for session check, re-runs when sessionStart changes
   useEffect(() => {
     if (!sessionLoaded) return;
     setLoading(true);
@@ -464,8 +444,7 @@ export default function Dashboard() {
   }
 
   const handleSessionSuccess = (session) => {
-    setCurrentSession(session);
-    setSessionStart(session.started_at); // triggers dashboard re-fetch via useEffect
+    startSession(session); // updates context → triggers dashboard re-fetch via useEffect
     setShowSessionModal(false);
     addToast(`Session "${session.name}" started. Dashboard updated.`, 'success');
   };
