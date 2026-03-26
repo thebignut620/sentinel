@@ -404,8 +404,12 @@ export default function Dashboard() {
     api.get('/sessions')
       .then(r => {
         if (r.data?.length > 0) {
-          setCurrentSession(r.data[0]);
-          setSessionStart(r.data[0].started_at);
+          const s = r.data[0];
+          console.log('[Dashboard] active session loaded:', s.name, '| started_at:', s.started_at);
+          setCurrentSession(s);
+          setSessionStart(s.started_at);
+        } else {
+          console.log('[Dashboard] no active session — fetching all-time data');
         }
       })
       .catch(() => {})
@@ -418,7 +422,7 @@ export default function Dashboard() {
     setLoading(true);
     setError(null);
     const params = sessionStart ? { session_start: sessionStart } : {};
-    console.log('[Dashboard] fetching stats, session_start:', sessionStart);
+    console.log('[Dashboard] fetching /dashboard — session_start:', sessionStart ?? 'none (all-time)', '| params:', JSON.stringify(params));
     api.get('/dashboard', { params })
       .then(r => setStats(r.data))
       .catch(err => {

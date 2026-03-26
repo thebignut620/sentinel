@@ -55,6 +55,7 @@ await runMigrations();
 startCronJobs();
 
 const app = express();
+app.set('trust proxy', 1); // Required for Railway — correctly reads X-Forwarded-For
 const PORT = process.env.PORT || 3001;
 
 // ─── Security headers (helmet) ────────────────────────────────────────────────

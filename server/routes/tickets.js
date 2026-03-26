@@ -29,8 +29,11 @@ async function logHistory(ticketId, userId, action, fromVal, toVal) {
 
 // List tickets
 router.get('/', authenticate, async (req, res) => {
-  const { status, priority, category, search, assignee } = req.query;
+  const { status, priority, category, search, assignee, session_start } = req.query;
   const companyId = req.user.company_id || 1;
+
+  console.log(`[tickets] GET / role=${req.user.role} id=${req.user.id} session_start=${session_start || 'none'}`);
+
   let query, params;
 
   if (req.user.role === 'employee') {
@@ -55,9 +58,10 @@ router.get('/', authenticate, async (req, res) => {
     params = [companyId];
   }
 
-  if (status)   { query += ' AND t.status = ?';   params.push(status); }
-  if (priority) { query += ' AND t.priority = ?'; params.push(priority); }
-  if (category) { query += ' AND t.category = ?'; params.push(category); }
+  if (session_start) { query += ' AND t.created_at >= ?'; params.push(session_start); }
+  if (status)        { query += ' AND t.status = ?';      params.push(status); }
+  if (priority)      { query += ' AND t.priority = ?';    params.push(priority); }
+  if (category)      { query += ' AND t.category = ?';    params.push(category); }
   if (assignee === 'me') { query += ' AND t.assignee_id = ?'; params.push(req.user.id); }
   if (search) {
     query += ' AND (t.title LIKE ? OR u.name LIKE ?)';
@@ -65,8 +69,10 @@ router.get('/', authenticate, async (req, res) => {
   }
   query += ' ORDER BY t.created_at DESC';
 
+  console.log(`[tickets] WHERE clause — session_start=${session_start || 'none'} status=${status || '*'} priority=${priority || '*'}`);
+
   const rows = await db.all(query, ...params);
-  console.log(`[tickets] GET / role=${req.user.role} id=${req.user.id} returned=${rows.length}`);
+  console.log(`[tickets] GET / returned=${rows.length} (filtered from session_start=${session_start || 'all-time'})`);
   res.json(rows);
 });
 

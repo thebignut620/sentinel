@@ -21,6 +21,8 @@ router.get('/', authenticate, async (req, res) => {
     params = [...params, sessionStart];
   }
 
+  console.log(`[dashboard] GET / role=${req.user.role} company=${companyId} session_start=${sessionStart || 'none'} whereUser="${whereUser}"`);
+
   const [
     statusCounts,
     criticalCount,
@@ -66,6 +68,8 @@ router.get('/', authenticate, async (req, res) => {
   ]);
 
   const stats = Object.fromEntries(statusCounts.map(r => [r.status, r.count]));
+  const totalInSession = Object.values(stats).reduce((a, b) => a + Number(b), 0);
+  console.log(`[dashboard] query done — total tickets in window=${totalInSession} session_start=${sessionStart || 'all-time'}`);
 
   res.json({
     open: stats.open || 0,
