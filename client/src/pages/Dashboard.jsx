@@ -199,11 +199,14 @@ function ActivityFeed({ items }) {
 }
 
 // ── Health Score Widget ────────────────────────────────────────────────────────
-function HealthScoreWidget({ sessionStart, sessionName }) {
+function HealthScoreWidget() {
+  const { sessionStart, currentSession } = useSession();
+  const sessionName = currentSession?.name;
   const [data, setData] = useState(null);
 
   useEffect(() => {
     const params = sessionStart ? { session_start: sessionStart } : {};
+    console.log('[HealthScoreWidget] fetching health score — session_start:', sessionStart ?? 'none', '| params:', JSON.stringify(params));
     api.get('/analytics/health-score', { params })
       .then(r => setData(r.data))
       .catch(() => {});
@@ -572,7 +575,7 @@ export default function Dashboard() {
 
       {/* Health Score — admin/staff only, filtered by active session */}
       {user.role !== 'employee' && (
-        <HealthScoreWidget sessionStart={sessionStart} sessionName={currentSession?.name} />
+        <HealthScoreWidget key={sessionStart ?? 'default'} />
       )}
 
       {/* Stat cards */}
