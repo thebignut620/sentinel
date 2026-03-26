@@ -13,22 +13,26 @@ const router = express.Router();
 // ─── REAL-TIME STATS ─────────────────────────────────────────────────────────
 router.get('/realtime', authenticate, async (req, res) => {
   const companyId = req.user.company_id || 1;
+  const { session_start } = req.query;
+  const sc = session_start ? 'AND created_at >= ?' : '';
+  const sp = session_start ? [session_start] : [];
   try {
     const [open, inProgress, resolvedToday, avgRes, total, atlasHandled, ticketsThisHour] =
       await Promise.all([
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'open' AND company_id = ?`, companyId),
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'in_progress' AND company_id = ?`, companyId),
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE resolved_at::date = CURRENT_DATE AND company_id = ?`, companyId),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'open' AND company_id = ? ${sc}`, companyId, ...sp),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'in_progress' AND company_id = ? ${sc}`, companyId, ...sp),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE resolved_at::date = CURRENT_DATE AND company_id = ? ${sc}`, companyId, ...sp),
         db.get(
           `SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours
-           FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ?`,
-          companyId
+           FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ? ${sc}`,
+          companyId, ...sp
         ),
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE company_id = ?`, companyId),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE company_id = ? ${sc}`, companyId, ...sp),
         db.get(
-          `SELECT COUNT(*) as count FROM tickets WHERE (ai_auto_assigned = 1 OR ai_attempted = 1) AND company_id = ?`,
-          companyId
+          `SELECT COUNT(*) as count FROM tickets WHERE (ai_auto_assigned = 1 OR ai_attempted = 1) AND company_id = ? ${sc}`,
+          companyId, ...sp
         ),
+        // ticketsThisHour is always last 60 min — not session-scoped
         db.get(
           `SELECT COUNT(*) as count FROM tickets
            WHERE created_at >= NOW() - INTERVAL '1 hour' AND company_id = ?`,
@@ -56,6 +60,9 @@ router.get('/realtime', authenticate, async (req, res) => {
 // ─── STAFF PERFORMANCE LEADERBOARD ──────────────────────────────────────────
 router.get('/staff-performance', authenticate, async (req, res) => {
   const companyId = req.user.company_id || 1;
+  const { session_start } = req.query;
+  const sc = session_start ? 'AND t.created_at >= ?' : '';
+  const sp = session_start ? [session_start] : [];
   try {
     const staff = await db.all(`
       SELECT
@@ -68,11 +75,11 @@ router.get('/staff-performance', authenticate, async (req, res) => {
         COUNT(t.id) FILTER (WHERE t.status IN ('resolved','closed')) as total_closed,
         COUNT(t.id) as total_assigned
       FROM users u
-      LEFT JOIN tickets t ON t.assignee_id = u.id AND t.company_id = ?
+      LEFT JOIN tickets t ON t.assignee_id = u.id AND t.company_id = ? ${sc}
       WHERE u.role IN ('it_staff', 'admin') AND u.is_active = 1 AND u.company_id = ?
       GROUP BY u.id, u.name
       ORDER BY resolved_count DESC
-    `, companyId, companyId);
+    `, companyId, ...sp, companyId);
 
     const satisfaction = await db.all(`
       SELECT t.assignee_id,
@@ -80,9 +87,9 @@ router.get('/staff-performance', authenticate, async (req, res) => {
         COUNT(*) FILTER (WHERE sr.rating = 'up') as thumbs_up
       FROM satisfaction_ratings sr
       JOIN tickets t ON sr.ticket_id = t.id
-      WHERE sr.rating IS NOT NULL AND t.assignee_id IS NOT NULL AND t.company_id = ?
+      WHERE sr.rating IS NOT NULL AND t.assignee_id IS NOT NULL AND t.company_id = ? ${sc}
       GROUP BY t.assignee_id
-    `, companyId);
+    `, companyId, ...sp);
 
     const satMap = Object.fromEntries(satisfaction.map(s => [s.assignee_id, s]));
 
@@ -120,6 +127,10 @@ router.get('/staff-performance', authenticate, async (req, res) => {
 // ─── RESOLUTION TIME BREAKDOWN ───────────────────────────────────────────────
 router.get('/resolution-time', authenticate, async (req, res) => {
   const companyId = req.user.company_id || 1;
+  const { session_start } = req.query;
+  const sc = session_start ? 'AND created_at >= ?' : '';
+  const tsc = session_start ? 'AND t.created_at >= ?' : '';
+  const sp = session_start ? [session_start] : [];
   try {
     const [byCategory, byPriority, byStaff] = await Promise.all([
       db.all(`
@@ -128,30 +139,30 @@ router.get('/resolution-time', authenticate, async (req, res) => {
           AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours,
           MIN(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as min_hours,
           MAX(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as max_hours
-        FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ?
+        FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ? ${sc}
         GROUP BY category ORDER BY avg_hours DESC
-      `, companyId),
+      `, companyId, ...sp),
       db.all(`
         SELECT priority,
           COUNT(*) as count,
           AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours
-        FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ?
+        FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ? ${sc}
         GROUP BY priority
         ORDER BY CASE priority
           WHEN 'critical' THEN 1 WHEN 'high' THEN 2
           WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END
-      `, companyId),
+      `, companyId, ...sp),
       db.all(`
         SELECT u.name as staff_name,
           COUNT(*) as count,
           AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)) / 3600) as avg_hours
         FROM tickets t
         JOIN users u ON t.assignee_id = u.id
-        WHERE t.resolved_at IS NOT NULL AND u.role IN ('it_staff', 'admin') AND t.company_id = ?
+        WHERE t.resolved_at IS NOT NULL AND u.role IN ('it_staff', 'admin') AND t.company_id = ? ${tsc}
         GROUP BY u.id, u.name
         ORDER BY avg_hours ASC
         LIMIT 10
-      `, companyId),
+      `, companyId, ...sp),
     ]);
 
     const fmt = rows =>
@@ -175,6 +186,9 @@ router.get('/resolution-time', authenticate, async (req, res) => {
 // ─── PEAK HOURS HEATMAP ──────────────────────────────────────────────────────
 router.get('/peak-hours', authenticate, async (req, res) => {
   const companyId = req.user.company_id || 1;
+  const { session_start } = req.query;
+  const sc = session_start ? 'AND created_at >= ?' : '';
+  const sp = session_start ? [session_start] : [];
   try {
     const rows = await db.all(`
       SELECT
@@ -182,9 +196,9 @@ router.get('/peak-hours', authenticate, async (req, res) => {
         EXTRACT(HOUR FROM created_at)::integer as hour,
         COUNT(*) as count
       FROM tickets
-      WHERE company_id = ?
+      WHERE company_id = ? ${sc}
       GROUP BY dow, hour
-    `, companyId);
+    `, companyId, ...sp);
 
     // Build 7x24 matrix (dow 0=Sun..6=Sat, hour 0..23)
     const matrix = Array.from({ length: 7 }, () => new Array(24).fill(0));
@@ -260,6 +274,9 @@ router.get('/volume', authenticate, async (req, res) => {
 // ─── COMMON ISSUES (top categories + keywords) ───────────────────────────────
 router.get('/common-issues', authenticate, async (req, res) => {
   const companyId = req.user.company_id || 1;
+  const { session_start } = req.query;
+  const sc = session_start ? 'AND created_at >= ?' : '';
+  const sp = session_start ? [session_start] : [];
   try {
     const byCategory = await db.all(`
       SELECT
@@ -268,14 +285,14 @@ router.get('/common-issues', authenticate, async (req, res) => {
         COUNT(*) FILTER (WHERE ai_attempted = 1 AND status IN ('resolved','closed')) as atlas_resolved,
         COUNT(*) FILTER (WHERE status IN ('resolved','closed')) as resolved
       FROM tickets
-      WHERE company_id = ?
+      WHERE company_id = ? ${sc}
       GROUP BY category
       ORDER BY total DESC
-    `, companyId);
+    `, companyId, ...sp);
 
     const titles = await db.all(
-      `SELECT title FROM tickets WHERE company_id = ? ORDER BY created_at DESC LIMIT 500`,
-      companyId
+      `SELECT title FROM tickets WHERE company_id = ? ${sc} ORDER BY created_at DESC LIMIT 500`,
+      companyId, ...sp
     );
 
     const stopWords = new Set([
@@ -642,6 +659,7 @@ router.get('/health-score', authenticate, async (req, res) => {
       : new Date(now - 30 * 24 * 60 * 60 * 1000);
     // Previous period of equal length (for volume trend comparison)
     const prevFromDate = new Date(fromDate.getTime() - (now.getTime() - fromDate.getTime()));
+    console.log(`[health-score] company=${companyId} session_start=${req.query.session_start || 'none'} fromDate=${fromDate.toISOString()} prevFromDate=${prevFromDate.toISOString()} windowDays=${Math.round((now - fromDate) / 86400000)}`);
 
     // Resolution rate (25 pts)
     const totalTickets = await db.get(

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import api from '../../api/client.js';
+import { useSession } from '../../contexts/SessionContext.jsx';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +79,7 @@ const TABS = [
 ];
 
 // ─── TAB: REAL-TIME ───────────────────────────────────────────────────────────
-function RealtimeTab() {
+function RealtimeTab({ sessionStart }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -86,7 +87,8 @@ function RealtimeTab() {
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get('/analytics/realtime');
+      const params = sessionStart ? { session_start: sessionStart } : {};
+      const r = await api.get('/analytics/realtime', { params });
       setData(r.data);
       setLastUpdated(new Date());
       setPulse(true);
@@ -94,7 +96,7 @@ function RealtimeTab() {
     } catch {/* ignore */} finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionStart]);
 
   useEffect(() => {
     load();
@@ -151,16 +153,17 @@ function RealtimeTab() {
 }
 
 // ─── TAB: STAFF PERFORMANCE ───────────────────────────────────────────────────
-function StaffTab() {
+function StaffTab({ sessionStart }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/analytics/staff-performance')
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    api.get('/analytics/staff-performance', { params })
       .then(r => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [sessionStart]);
 
   if (loading) return <div className="text-gray-500 py-8 text-center">Loading…</div>;
   if (!data?.length) return <div className="text-gray-500 py-8 text-center">No staff data yet.</div>;
@@ -219,7 +222,7 @@ function StaffTab() {
 }
 
 // ─── TAB: VOLUME ──────────────────────────────────────────────────────────────
-function VolumeTab() {
+function VolumeTab({ sessionStart }) {
   const [period, setPeriod] = useState('day');
   const [data, setData] = useState(null);
   const [resTime, setResTime] = useState(null);
@@ -227,14 +230,15 @@ function VolumeTab() {
 
   useEffect(() => {
     setLoading(true);
+    const params = { period, ...(sessionStart ? { session_start: sessionStart } : {}) };
     Promise.all([
-      api.get(`/analytics/volume?period=${period}`),
-      api.get('/analytics/resolution-time'),
+      api.get('/analytics/volume', { params }),
+      api.get('/analytics/resolution-time', { params: sessionStart ? { session_start: sessionStart } : {} }),
     ])
       .then(([vr, rr]) => { setData(vr.data); setResTime(rr.data); })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [period]);
+  }, [period, sessionStart]);
 
   const total = data?.reduce((s, d) => s + Number(d.count), 0) || 0;
 
@@ -317,17 +321,18 @@ function VolumeTab() {
 }
 
 // ─── TAB: PEAK HOURS HEATMAP ──────────────────────────────────────────────────
-function HeatmapTab() {
+function HeatmapTab({ sessionStart }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState(null);
 
   useEffect(() => {
-    api.get('/analytics/peak-hours')
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    api.get('/analytics/peak-hours', { params })
       .then(r => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [sessionStart]);
 
   if (loading) return <div className="text-gray-500 py-8 text-center">Loading…</div>;
   if (!data) return null;
@@ -408,16 +413,17 @@ function HeatmapTab() {
 }
 
 // ─── TAB: COMMON ISSUES ───────────────────────────────────────────────────────
-function IssuesTab() {
+function IssuesTab({ sessionStart }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/analytics/common-issues')
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    api.get('/analytics/common-issues', { params })
       .then(r => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [sessionStart]);
 
   if (loading) return <div className="text-gray-500 py-8 text-center">Loading…</div>;
   if (!data) return null;
@@ -501,7 +507,7 @@ function IssuesTab() {
 }
 
 // ─── TAB: COST ANALYSIS ───────────────────────────────────────────────────────
-function CostTab() {
+function CostTab({ sessionStart }) {
   const [costPerTicket, setCostPerTicket] = useState(25);
   const [atlasHandledCost, setAtlasHandledCost] = useState(3);
   const [minutesPerTicket, setMinutesPerTicket] = useState(30);
@@ -510,14 +516,13 @@ function CostTab() {
 
   const loadData = useCallback(async () => {
     try {
-      const r = await api.get('/analytics/cost-savings', {
-        params: { costPerTicket, atlasHandledCost, minutesPerTicket },
-      });
+      const params = { costPerTicket, atlasHandledCost, minutesPerTicket, ...(sessionStart ? { session_start: sessionStart } : {}) };
+      const r = await api.get('/analytics/cost-savings', { params });
       setData(r.data);
     } catch {/* ignore */} finally {
       setLoading(false);
     }
-  }, [costPerTicket, atlasHandledCost, minutesPerTicket]);
+  }, [costPerTicket, atlasHandledCost, minutesPerTicket, sessionStart]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -613,16 +618,17 @@ function CostTab() {
 }
 
 // ─── TAB: SATISFACTION ────────────────────────────────────────────────────────
-function SatisfactionTab() {
+function SatisfactionTab({ sessionStart }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/analytics/satisfaction')
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    api.get('/analytics/satisfaction', { params })
       .then(r => setData(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [sessionStart]);
 
   if (loading) return <div className="text-gray-500 py-8 text-center">Loading…</div>;
   if (!data) return null;
@@ -886,15 +892,27 @@ function ReportsTab() {
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function Analytics() {
   const [tab, setTab] = useState('realtime');
+  const { sessionStart, currentSession } = useSession();
 
   return (
     <div>
       {/* Page header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Analytics</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Phase 5 — real-time metrics, staff performance, trends, and automated reports
-        </p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Analytics</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Phase 5 — real-time metrics, staff performance, trends, and automated reports
+          </p>
+        </div>
+        {currentSession && (
+          <div className="flex items-center gap-2 bg-pine-900/30 border border-pine-700/40 rounded-lg px-3 py-1.5 shrink-0">
+            <span className="h-1.5 w-1.5 rounded-full bg-pine-400 animate-pulse" />
+            <span className="text-pine-300 text-xs font-medium">{currentSession.name}</span>
+            <span className="text-pine-500 text-xs">
+              · day {Math.max(0, Math.floor((Date.now() - new Date(currentSession.started_at)) / 86400000))}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Tab bar */}
@@ -917,13 +935,13 @@ export default function Analytics() {
 
       {/* Tab content */}
       <div className="min-h-64">
-        {tab === 'realtime'     && <RealtimeTab />}
-        {tab === 'staff'        && <StaffTab />}
-        {tab === 'volume'       && <VolumeTab />}
-        {tab === 'heatmap'      && <HeatmapTab />}
-        {tab === 'issues'       && <IssuesTab />}
-        {tab === 'cost'         && <CostTab />}
-        {tab === 'satisfaction' && <SatisfactionTab />}
+        {tab === 'realtime'     && <RealtimeTab sessionStart={sessionStart} />}
+        {tab === 'staff'        && <StaffTab sessionStart={sessionStart} />}
+        {tab === 'volume'       && <VolumeTab sessionStart={sessionStart} />}
+        {tab === 'heatmap'      && <HeatmapTab sessionStart={sessionStart} />}
+        {tab === 'issues'       && <IssuesTab sessionStart={sessionStart} />}
+        {tab === 'cost'         && <CostTab sessionStart={sessionStart} />}
+        {tab === 'satisfaction' && <SatisfactionTab sessionStart={sessionStart} />}
         {tab === 'reports'      && <ReportsTab />}
       </div>
     </div>
