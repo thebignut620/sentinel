@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import sentinelLogo from '../assets/sentinel_logo.png';
 import { useAuth } from '../contexts/AuthContext.jsx';
@@ -318,8 +318,11 @@ export default function Layout() {
   });
   const [openTickets, setOpenTickets] = useState(0);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
   const [billingStatus, setBillingStatus] = useState(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const notifPanelRef = useRef(null);
   const { pathname } = useLocation();
 
   useKeyboardShortcuts({ onShowShortcuts: () => setShowShortcuts(true), userRole: user?.role });
@@ -340,14 +343,45 @@ export default function Layout() {
     }
   }, [user]);
 
-  useEffect(() => {
-    const fetchUnread = () => {
-      api.get('/notifications').then(r => setUnreadNotifs(r.data.unreadCount || 0)).catch(() => {});
-    };
-    fetchUnread();
-    const id = setInterval(fetchUnread, 60_000);
-    return () => clearInterval(id);
+  const fetchNotifications = useCallback(() => {
+    api.get('/notifications').then(r => {
+      setNotifications(r.data.notifications || []);
+      setUnreadNotifs(r.data.unreadCount || 0);
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const id = setInterval(fetchNotifications, 60_000);
+    return () => clearInterval(id);
+  }, [fetchNotifications]);
+
+  // Close notif panel when navigating
+  useEffect(() => { setShowNotifPanel(false); }, [pathname]);
+
+  // Close notif panel on outside click
+  useEffect(() => {
+    if (!showNotifPanel) return;
+    function handleClick(e) {
+      if (notifPanelRef.current && !notifPanelRef.current.contains(e.target)) {
+        setShowNotifPanel(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showNotifPanel]);
+
+  async function handleMarkRead(id) {
+    await api.post(`/notifications/${id}/read`).catch(() => {});
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
+    setUnreadNotifs(prev => Math.max(0, prev - 1));
+  }
+
+  async function handleMarkAllRead() {
+    await api.post('/notifications/read-all').catch(() => {});
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+    setUnreadNotifs(0);
+  }
 
   const handleLogout = () => {
     logout();
@@ -438,10 +472,10 @@ export default function Layout() {
         {/* Bell + User footer */}
         <div className="p-2 border-t border-gray-800 space-y-1">
           {user?.role !== 'employee' && (
-            <div className="relative group">
-              <Link
-                to="/notification-preferences"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-all duration-200 text-sm"
+            <div className="relative" ref={notifPanelRef}>
+              <button
+                onClick={() => { setShowNotifPanel(p => !p); if (!showNotifPanel) fetchNotifications(); }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-sm ${showNotifPanel ? 'bg-gray-800 text-gray-200' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'} ${collapsed ? 'justify-center' : ''}`}
               >
                 <span className="relative shrink-0">
                   {ICONS.bell}
@@ -461,13 +495,76 @@ export default function Layout() {
                     )}
                   </span>
                 )}
-              </Link>
-              {collapsed && unreadNotifs > 0 && (
-                <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 z-50
-                                bg-gray-800 border border-gray-700 text-gray-200 text-xs
-                                px-2.5 py-1.5 rounded-lg shadow-xl whitespace-nowrap
-                                opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  {unreadNotifs} unread notification{unreadNotifs !== 1 ? 's' : ''}
+              </button>
+
+              {/* Notification dropdown panel */}
+              {showNotifPanel && (
+                <div className="absolute bottom-full left-full mb-1 ml-1 w-80 bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl z-50 flex flex-col overflow-hidden"
+                     style={{ maxHeight: '420px' }}>
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-semibold text-sm">Notifications</span>
+                      {unreadNotifs > 0 && (
+                        <span className="px-1.5 py-0.5 bg-red-800/60 text-red-300 rounded text-[9px] font-bold">{unreadNotifs}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {unreadNotifs > 0 && (
+                        <button
+                          onClick={handleMarkAllRead}
+                          className="text-xs text-gray-400 hover:text-green-400 transition-colors"
+                        >
+                          Mark all read
+                        </button>
+                      )}
+                      <Link
+                        to="/notification-preferences"
+                        className="text-gray-500 hover:text-gray-300 transition-colors"
+                        title="Notification settings"
+                      >
+                        {ICONS.settings}
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* List */}
+                  <div className="overflow-y-auto flex-1">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center">
+                        <div className="text-2xl mb-2">🔔</div>
+                        <p className="text-gray-400 text-sm">No notifications yet</p>
+                      </div>
+                    ) : (
+                      notifications.map(n => (
+                        <button
+                          key={n.id}
+                          onClick={() => {
+                            if (!n.is_read) handleMarkRead(n.id);
+                            if (n.link) { setShowNotifPanel(false); navigate(n.link); }
+                          }}
+                          className={`w-full text-left px-4 py-3 border-b border-gray-800 last:border-0 transition-colors hover:bg-gray-800/60 ${!n.is_read ? 'bg-gray-800/30' : ''}`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!n.is_read && (
+                              <span className="mt-1.5 shrink-0 w-2 h-2 rounded-full bg-blue-500" />
+                            )}
+                            <div className={`flex-1 min-w-0 ${n.is_read ? 'pl-4' : ''}`}>
+                              <p className={`text-sm leading-snug ${n.is_read ? 'text-gray-400' : 'text-gray-100 font-medium'}`}>
+                                {n.title}
+                              </p>
+                              {n.body && (
+                                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{n.body}</p>
+                              )}
+                              <p className="text-[10px] text-gray-600 mt-1">
+                                {new Date(n.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
               )}
             </div>
