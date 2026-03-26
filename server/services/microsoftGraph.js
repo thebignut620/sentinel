@@ -26,7 +26,7 @@ function assertNotGlobalAdmin(roleNames = []) {
 // accessing email content, or changing billing/license assignments.
 
 // ─── OAUTH ────────────────────────────────────────────────────────────────────
-export function getAuthUrl() {
+export function getAuthUrl(companyId = 1) {
   console.log('[Microsoft OAuth] tenant_id =', TENANT_ID(), '| redirect_uri =', REDIRECT_URI());
   const params = new URLSearchParams({
     client_id:     CLIENT_ID(),
@@ -35,6 +35,7 @@ export function getAuthUrl() {
     scope:         SCOPES,
     response_mode: 'query',
     prompt:        'consent',
+    state:         String(companyId),
   });
   return `https://login.microsoftonline.com/${TENANT_ID()}/oauth2/v2.0/authorize?${params}`;
 }
@@ -59,15 +60,16 @@ export async function exchangeCode(code) {
   return res.json();
 }
 
-export async function getIntegration() {
+export async function getIntegration(companyId = 1) {
   return db.get(
-    "SELECT * FROM integrations WHERE provider = 'microsoft' AND is_active = 1 ORDER BY connected_at DESC LIMIT 1",
+    "SELECT * FROM integrations WHERE provider = 'microsoft' AND is_active = 1 AND company_id = ? ORDER BY connected_at DESC LIMIT 1",
+    companyId,
   );
 }
 
 // ─── TOKEN MANAGEMENT ─────────────────────────────────────────────────────────
-async function getAccessToken() {
-  const integration = await getIntegration();
+async function getAccessToken(companyId = 1) {
+  const integration = await getIntegration(companyId);
   if (!integration) throw new Error('Microsoft 365 not connected');
 
   const expiry = integration.token_expiry ? new Date(integration.token_expiry).getTime() : 0;
@@ -93,8 +95,8 @@ async function getAccessToken() {
     const tokens = await res.json();
     const newExpiry = new Date(Date.now() + tokens.expires_in * 1000).toISOString();
     await db.run(
-      "UPDATE integrations SET access_token = ?, token_expiry = ?, last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1",
-      tokens.access_token, newExpiry,
+      "UPDATE integrations SET access_token = ?, token_expiry = ?, last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1 AND company_id = ?",
+      tokens.access_token, newExpiry, companyId,
     );
     return tokens.access_token;
   }
@@ -103,8 +105,8 @@ async function getAccessToken() {
 }
 
 // ─── GRAPH API HELPERS ────────────────────────────────────────────────────────
-async function graphGet(path) {
-  const token = await getAccessToken();
+async function graphGet(path, companyId = 1) {
+  const token = await getAccessToken(companyId);
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -116,8 +118,8 @@ async function graphGet(path) {
   return res.json();
 }
 
-async function graphPatch(path, body) {
-  const token = await getAccessToken();
+async function graphPatch(path, body, companyId = 1) {
+  const token = await getAccessToken(companyId);
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -130,8 +132,8 @@ async function graphPatch(path, body) {
   return res.status === 204 ? null : res.json();
 }
 
-async function graphPost(path, body) {
-  const token = await getAccessToken();
+async function graphPost(path, body, companyId = 1) {
+  const token = await getAccessToken(companyId);
   const res = await fetch(`https://graph.microsoft.com/v1.0${path}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -145,13 +147,13 @@ async function graphPost(path, body) {
 }
 
 // ─── USER LOOKUP ──────────────────────────────────────────────────────────────
-export async function lookupUser(email) {
+export async function lookupUser(email, companyId = 1) {
   try {
     const enc = encodeURIComponent(email);
     const [userRes, groupsRes, licensesRes] = await Promise.allSettled([
-      graphGet(`/users/${enc}?$select=id,displayName,mail,accountEnabled,jobTitle,department,lastPasswordChangeDateTime,signInActivity`),
-      graphGet(`/users/${enc}/memberOf?$select=displayName,@odata.type`),
-      graphGet(`/users/${enc}/licenseDetails?$select=skuPartNumber`),
+      graphGet(`/users/${enc}?$select=id,displayName,mail,accountEnabled,jobTitle,department,lastPasswordChangeDateTime,signInActivity`, companyId),
+      graphGet(`/users/${enc}/memberOf?$select=displayName,@odata.type`, companyId),
+      graphGet(`/users/${enc}/licenseDetails?$select=skuPartNumber`, companyId),
     ]);
 
     if (userRes.status === 'rejected' || !userRes.value) return null;
@@ -198,56 +200,56 @@ function generateTempPassword() {
   return pw.split('').sort(() => Math.random() - 0.5).join('');
 }
 
-export async function resetPassword(email) {
+export async function resetPassword(email, companyId = 1) {
   const enc = encodeURIComponent(email);
   // Safety: verify not a global admin
-  const rolesRes = await graphGet(`/users/${enc}/memberOf/microsoft.graph.directoryRole?$select=displayName`).catch(() => null);
+  const rolesRes = await graphGet(`/users/${enc}/memberOf/microsoft.graph.directoryRole?$select=displayName`, companyId).catch(() => null);
   assertNotGlobalAdmin((rolesRes?.value || []).map(r => r.displayName));
 
   const tempPassword = generateTempPassword();
   await graphPatch(`/users/${enc}`, {
     passwordProfile: { password: tempPassword, forceChangePasswordNextSignIn: true },
-  });
+  }, companyId);
 
-  await db.run("UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1");
+  await db.run("UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1 AND company_id = ?", companyId);
   return { tempPassword };
 }
 
 // ─── ACCOUNT UNLOCK ───────────────────────────────────────────────────────────
-export async function unlockAccount(email) {
+export async function unlockAccount(email, companyId = 1) {
   const enc = encodeURIComponent(email);
   // Safety: verify not a global admin
-  const rolesRes = await graphGet(`/users/${enc}/memberOf/microsoft.graph.directoryRole?$select=displayName`).catch(() => null);
+  const rolesRes = await graphGet(`/users/${enc}/memberOf/microsoft.graph.directoryRole?$select=displayName`, companyId).catch(() => null);
   assertNotGlobalAdmin((rolesRes?.value || []).map(r => r.displayName));
 
-  await graphPatch(`/users/${enc}`, { accountEnabled: true });
+  await graphPatch(`/users/${enc}`, { accountEnabled: true }, companyId);
 
-  await db.run("UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1");
+  await db.run("UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1 AND company_id = ?", companyId);
   return { userEmail: email };
 }
 
 // ─── SHAREPOINT ACCESS GRANT ──────────────────────────────────────────────────
-export async function grantSharePointAccess(siteId, targetEmail, role = 'read') {
+export async function grantSharePointAccess(siteId, targetEmail, role = 'read', companyId = 1) {
   if (!SAFE_SP_ROLES.includes(role)) {
     throw new Error('SAFETY_LIMIT: Invalid SharePoint permission role');
   }
 
-  const user = await graphGet(`/users/${encodeURIComponent(targetEmail)}?$select=id`);
+  const user = await graphGet(`/users/${encodeURIComponent(targetEmail)}?$select=id`, companyId);
   if (!user) throw new Error(`User ${targetEmail} not found in Microsoft 365`);
 
   await graphPost(`/sites/${siteId}/permissions`, {
     roles: [role],
     grantedToIdentities: [{ user: { id: user.id, email: targetEmail } }],
-  });
+  }, companyId);
 
-  await db.run("UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1");
+  await db.run("UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'microsoft' AND is_active = 1 AND company_id = ?", companyId);
   return { siteId, targetEmail, role };
 }
 
 // ─── TEAMS NOTIFICATION ───────────────────────────────────────────────────────
-export async function sendTeamsNotification(message, title = 'ATLAS Notification') {
+export async function sendTeamsNotification(message, title = 'ATLAS Notification', companyId = 1) {
   try {
-    const integration = await getIntegration();
+    const integration = await getIntegration(companyId);
     if (!integration) return;
     const metadata = integration.metadata ? JSON.parse(integration.metadata) : {};
     const webhookUrl = metadata.teams_webhook_url;

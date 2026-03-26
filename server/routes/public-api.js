@@ -131,6 +131,7 @@ router.use(apiKeyAuth, rateLimitMiddleware);
 // GET /v1/tickets — list tickets
 router.get('/tickets', async (req, res) => {
   const { status, priority, category, limit = 50, offset = 0 } = req.query;
+  const companyId = req.apiKey.company_id || 1;
 
   let query = `
     SELECT t.id, t.title, t.description, t.status, t.priority, t.category,
@@ -140,9 +141,9 @@ router.get('/tickets', async (req, res) => {
     FROM tickets t
     JOIN users u ON t.submitter_id = u.id
     LEFT JOIN users a ON t.assignee_id = a.id
-    WHERE 1=1
+    WHERE t.company_id = ?
   `;
-  const params = [];
+  const params = [companyId];
 
   if (status)   { query += ' AND t.status = ?';   params.push(status); }
   if (priority) { query += ' AND t.priority = ?'; params.push(priority); }
@@ -152,11 +153,12 @@ router.get('/tickets', async (req, res) => {
   params.push(Math.min(parseInt(limit) || 50, 200), parseInt(offset) || 0);
 
   const rows = await db.all(query, ...params);
-  const total = await db.get('SELECT COUNT(*) as count FROM tickets WHERE 1=1' +
+  const countParams = [companyId, ...[status, priority, category].filter(Boolean)];
+  const total = await db.get('SELECT COUNT(*) as count FROM tickets WHERE company_id = ?' +
     (status ? ' AND status = ?' : '') +
     (priority ? ' AND priority = ?' : '') +
     (category ? ' AND category = ?' : ''),
-    ...[status, priority, category].filter(Boolean)
+    ...countParams
   );
 
   res.json({
@@ -171,13 +173,14 @@ router.get('/tickets', async (req, res) => {
 
 // GET /v1/tickets/:id — get single ticket
 router.get('/tickets/:id', async (req, res) => {
+  const companyId = req.apiKey.company_id || 1;
   const ticket = await db.get(`
     SELECT t.*, u.name as submitter_name, u.email as submitter_email, a.name as assignee_name
     FROM tickets t
     JOIN users u ON t.submitter_id = u.id
     LEFT JOIN users a ON t.assignee_id = a.id
-    WHERE t.id = ?
-  `, req.params.id);
+    WHERE t.id = ? AND t.company_id = ?
+  `, req.params.id, companyId);
 
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
@@ -195,6 +198,7 @@ router.get('/tickets/:id', async (req, res) => {
 // POST /v1/tickets — create ticket
 router.post('/tickets', async (req, res) => {
   const { title, description, priority = 'medium', category = 'software', submitter_email } = req.body;
+  const companyId = req.apiKey.company_id || 1;
 
   if (!title?.trim() || !description?.trim()) {
     return res.status(400).json({ error: 'title and description are required' });
@@ -205,11 +209,11 @@ router.post('/tickets', async (req, res) => {
 
   let submitterId;
   if (submitter_email) {
-    const user = await db.get('SELECT id FROM users WHERE email = ? AND is_active = 1', submitter_email);
+    const user = await db.get('SELECT id FROM users WHERE email = ? AND is_active = 1 AND company_id = ?', submitter_email, companyId);
     submitterId = user?.id;
   }
   if (!submitterId) {
-    const admin = await db.get("SELECT id FROM users WHERE role = 'admin' AND is_active = 1 LIMIT 1");
+    const admin = await db.get("SELECT id FROM users WHERE role = 'admin' AND is_active = 1 AND company_id = ? LIMIT 1", companyId);
     submitterId = admin?.id;
   }
   if (!submitterId) return res.status(500).json({ error: 'No valid submitter found' });
@@ -218,9 +222,9 @@ router.post('/tickets', async (req, res) => {
   const slaDueAt = new Date(Date.now() + (SLA_HOURS[validPriority] ?? 24) * 3_600_000).toISOString();
 
   const result = await db.run(`
-    INSERT INTO tickets (title, description, priority, category, submitter_id, ai_attempted, sla_due_at)
-    VALUES (?, ?, ?, ?, ?, 0, ?)
-  `, title.trim(), description.trim(), validPriority, validCategory, submitterId, slaDueAt);
+    INSERT INTO tickets (title, description, priority, category, submitter_id, ai_attempted, sla_due_at, company_id)
+    VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+  `, title.trim(), description.trim(), validPriority, validCategory, submitterId, slaDueAt, companyId);
 
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastID ?? result.lastInsertRowid);
   res.status(201).json(ticket);
@@ -228,7 +232,8 @@ router.post('/tickets', async (req, res) => {
 
 // PATCH /v1/tickets/:id — update ticket status/priority/assignee
 router.patch('/tickets/:id', async (req, res) => {
-  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  const companyId = req.apiKey.company_id || 1;
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
   const { status, priority, assignee_email } = req.body;
@@ -249,7 +254,7 @@ router.patch('/tickets/:id', async (req, res) => {
   }
   if (assignee_email !== undefined) {
     if (assignee_email) {
-      const assignee = await db.get('SELECT id FROM users WHERE email = ? AND is_active = 1', assignee_email);
+      const assignee = await db.get('SELECT id FROM users WHERE email = ? AND is_active = 1 AND company_id = ?', assignee_email, companyId);
       if (!assignee) return res.status(400).json({ error: 'Assignee not found' });
       fields.push('assignee_id = ?'); values.push(assignee.id);
     } else {
@@ -260,9 +265,9 @@ router.patch('/tickets/:id', async (req, res) => {
   if (fields.length === 0) return res.status(400).json({ error: 'Nothing to update. Provide status, priority, or assignee_email.' });
 
   fields.push('updated_at = NOW()');
-  await db.run(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ?`, ...values, req.params.id);
+  await db.run(`UPDATE tickets SET ${fields.join(', ')} WHERE id = ? AND company_id = ?`, ...values, req.params.id, companyId);
 
-  const updated = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  const updated = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   res.json(updated);
 });
 

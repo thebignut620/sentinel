@@ -236,19 +236,21 @@ router.post('/', authenticate, async (req, res) => {
       const titleTrimmed = title.trim();
       const descTrimmed  = description.trim();
 
+      const companyId = req.user.company_id || 1;
       const [googleInt, msInt] = await Promise.all([
-        getGoogleIntegration(),
-        getMsIntegration(),
+        getGoogleIntegration(companyId),
+        getMsIntegration(companyId),
       ]);
 
       if (googleInt) {
         const actionType = detectGoogleAction(titleTrimmed, descTrimmed);
         if (actionType) {
           await db.run(
-            `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details, provider)
-             VALUES (?, ?, ?, ?, ?, 'google')`,
+            `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details, provider, company_id)
+             VALUES (?, ?, ?, ?, ?, 'google', ?)`,
             ticket.id, actionType, req.user.email, req.user.name,
             actionType === 'access_grant' ? JSON.stringify({ drive_id: '', role: 'reader' }) : null,
+            companyId,
           );
         }
       }
@@ -257,10 +259,11 @@ router.post('/', authenticate, async (req, res) => {
         const actionType = detectMsAction(titleTrimmed, descTrimmed);
         if (actionType) {
           await db.run(
-            `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details, provider)
-             VALUES (?, ?, ?, ?, ?, 'microsoft')`,
+            `INSERT INTO atlas_actions (ticket_id, action_type, target_email, target_name, details, provider, company_id)
+             VALUES (?, ?, ?, ?, ?, 'microsoft', ?)`,
             ticket.id, actionType, req.user.email, req.user.name,
             actionType === 'access_grant' ? JSON.stringify({ site_id: '', role: 'read' }) : null,
+            companyId,
           );
         }
       }
@@ -276,6 +279,7 @@ router.post('/', authenticate, async (req, res) => {
         await sendTeamsNotification(
           `Critical ticket submitted by ${req.user.name}: "${title.trim()}" — requires immediate attention. Ticket #${ticket.id}`,
           '🚨 Critical Ticket Created',
+          req.user.company_id || 1,
         );
       } catch (e) {
         console.error('[M365] Teams critical ticket notification error:', e.message);

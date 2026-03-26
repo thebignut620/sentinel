@@ -7,9 +7,13 @@ const router = express.Router();
 // GET /employee-profiles/:userId
 router.get('/:userId', authenticate, async (req, res) => {
   const targetId = parseInt(req.params.userId);
+  const companyId = req.user.company_id || 1;
   if (req.user.role === 'employee' && req.user.id !== targetId) {
     return res.status(403).json({ error: 'Access denied' });
   }
+  // Verify target user belongs to the same company
+  const targetUser = await db.get('SELECT id FROM users WHERE id = ? AND company_id = ?', targetId, companyId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found' });
   const profile = await db.get('SELECT * FROM employee_profiles WHERE user_id = ?', targetId);
   res.json(profile || null);
 });
@@ -17,9 +21,13 @@ router.get('/:userId', authenticate, async (req, res) => {
 // PUT /employee-profiles/:userId
 router.put('/:userId', authenticate, async (req, res) => {
   const targetId = parseInt(req.params.userId);
+  const companyId = req.user.company_id || 1;
   if (req.user.role === 'employee' && req.user.id !== targetId) {
     return res.status(403).json({ error: 'Access denied' });
   }
+  // Verify target user belongs to the same company
+  const targetUser = await db.get('SELECT id FROM users WHERE id = ? AND company_id = ?', targetId, companyId);
+  if (!targetUser) return res.status(404).json({ error: 'User not found' });
 
   const { department, device_type, primary_software, tenure_months, notes } = req.body;
   const existing = await db.get('SELECT id FROM employee_profiles WHERE user_id = ?', targetId);

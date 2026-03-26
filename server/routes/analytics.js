@@ -217,7 +217,7 @@ router.get('/volume', authenticate, async (req, res) => {
                DATE_TRUNC('month', created_at) as sort_key,
                COUNT(*) as count
         FROM tickets
-        WHERE created_at >= NOW() - INTERVAL '12 months' AND company_id = ${companyId}
+        WHERE created_at >= NOW() - INTERVAL '12 months' AND company_id = ?
         GROUP BY DATE_TRUNC('month', created_at)
         ORDER BY sort_key ASC
       `;
@@ -227,7 +227,7 @@ router.get('/volume', authenticate, async (req, res) => {
                DATE_TRUNC('week', created_at) as sort_key,
                COUNT(*) as count
         FROM tickets
-        WHERE created_at >= NOW() - INTERVAL '12 weeks' AND company_id = ${companyId}
+        WHERE created_at >= NOW() - INTERVAL '12 weeks' AND company_id = ?
         GROUP BY DATE_TRUNC('week', created_at)
         ORDER BY sort_key ASC
       `;
@@ -237,13 +237,13 @@ router.get('/volume', authenticate, async (req, res) => {
                DATE(created_at) as sort_key,
                COUNT(*) as count
         FROM tickets
-        WHERE created_at >= CURRENT_DATE - INTERVAL '29 days' AND company_id = ${companyId}
+        WHERE created_at >= CURRENT_DATE - INTERVAL '29 days' AND company_id = ?
         GROUP BY DATE(created_at)
         ORDER BY sort_key ASC
       `;
     }
 
-    const rows = await db.all(query);
+    const rows = await db.all(query, companyId);
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });

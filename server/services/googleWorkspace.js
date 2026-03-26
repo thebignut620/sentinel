@@ -26,13 +26,14 @@ function createOAuthClient() {
   );
 }
 
-export function getAuthUrl() {
+export function getAuthUrl(companyId = 1) {
   const client = createOAuthClient();
   console.log('[Google OAuth] redirect_uri =', process.env.GOOGLE_REDIRECT_URI);
   return client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
     prompt: 'consent', // force refresh_token to always be returned
+    state: String(companyId),
   });
 }
 
@@ -42,14 +43,15 @@ export async function exchangeCode(code) {
   return tokens;
 }
 
-export async function getIntegration() {
+export async function getIntegration(companyId = 1) {
   return db.get(
-    "SELECT * FROM integrations WHERE provider = 'google' AND is_active = 1 ORDER BY connected_at DESC LIMIT 1",
+    "SELECT * FROM integrations WHERE provider = 'google' AND is_active = 1 AND company_id = ? ORDER BY connected_at DESC LIMIT 1",
+    companyId,
   );
 }
 
-async function getAuthorizedClient() {
-  const integration = await getIntegration();
+async function getAuthorizedClient(companyId = 1) {
+  const integration = await getIntegration(companyId);
   if (!integration) throw new Error('Google Workspace not connected');
 
   const client = createOAuthClient();
@@ -72,8 +74,8 @@ async function getAuthorizedClient() {
     }
     if (vals.length) {
       await db.run(
-        `UPDATE integrations SET ${updates.join(', ')} WHERE provider = 'google' AND is_active = 1`,
-        ...vals,
+        `UPDATE integrations SET ${updates.join(', ')} WHERE provider = 'google' AND is_active = 1 AND company_id = ?`,
+        ...vals, companyId,
       );
     }
   });
@@ -82,9 +84,9 @@ async function getAuthorizedClient() {
 }
 
 // ─── USER LOOKUP ──────────────────────────────────────────────────────────────
-export async function lookupUser(email) {
+export async function lookupUser(email, companyId = 1) {
   try {
-    const auth = await getAuthorizedClient();
+    const auth = await getAuthorizedClient(companyId);
     const admin = google.admin({ version: 'directory_v1', auth });
 
     const [userRes, groupsRes] = await Promise.allSettled([
@@ -130,8 +132,8 @@ function generateTempPassword() {
   return pw.split('').sort(() => Math.random() - 0.5).join('');
 }
 
-export async function resetPassword(email) {
-  const auth = await getAuthorizedClient();
+export async function resetPassword(email, companyId = 1) {
+  const auth = await getAuthorizedClient(companyId);
   const admin = google.admin({ version: 'directory_v1', auth });
 
   const userRes = await admin.users.get({ userKey: email });
@@ -147,14 +149,15 @@ export async function resetPassword(email) {
   });
 
   await db.run(
-    "UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'google' AND is_active = 1",
+    "UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'google' AND is_active = 1 AND company_id = ?",
+    companyId,
   );
   return { tempPassword };
 }
 
 // ─── ACCOUNT UNLOCK ───────────────────────────────────────────────────────────
-export async function unlockAccount(email) {
-  const auth = await getAuthorizedClient();
+export async function unlockAccount(email, companyId = 1) {
+  const auth = await getAuthorizedClient(companyId);
   const admin = google.admin({ version: 'directory_v1', auth });
 
   const userRes = await admin.users.get({ userKey: email });
@@ -166,19 +169,20 @@ export async function unlockAccount(email) {
   });
 
   await db.run(
-    "UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'google' AND is_active = 1",
+    "UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'google' AND is_active = 1 AND company_id = ?",
+    companyId,
   );
   return { userEmail: email };
 }
 
 // ─── DRIVE ACCESS GRANT ───────────────────────────────────────────────────────
-export async function grantDriveAccess(fileId, targetEmail, role = 'reader') {
+export async function grantDriveAccess(fileId, targetEmail, role = 'reader', companyId = 1) {
   // SAFETY LIMIT: only safe roles allowed — never owner
   if (!SAFE_DRIVE_ROLES.includes(role)) {
     throw new Error('SAFETY_LIMIT: Invalid Drive permission role');
   }
 
-  const auth = await getAuthorizedClient();
+  const auth = await getAuthorizedClient(companyId);
   const drive = google.drive({ version: 'v3', auth });
 
   await drive.permissions.create({
@@ -189,7 +193,8 @@ export async function grantDriveAccess(fileId, targetEmail, role = 'reader') {
   });
 
   await db.run(
-    "UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'google' AND is_active = 1",
+    "UPDATE integrations SET last_sync_at = NOW() WHERE provider = 'google' AND is_active = 1 AND company_id = ?",
+    companyId,
   );
   return { fileId, targetEmail, role };
 }

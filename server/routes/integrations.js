@@ -11,23 +11,25 @@ const CLIENT_URL = process.env.CLIENT_URL || 'https://sentinel-eta-woad.vercel.a
 // ─── GOOGLE OAUTH FLOW ────────────────────────────────────────────────────────
 
 router.get('/google/connect-url', authenticate, requireRole('admin'), (req, res) => {
-  res.json({ url: gws.getAuthUrl() });
+  res.json({ url: gws.getAuthUrl(req.user.company_id || 1) });
 });
 
 router.get('/google/callback', async (req, res) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
+  const companyId = parseInt(state) || 1;
   if (error || !code) {
     return res.redirect(`${CLIENT_URL}/admin/integrations?error=oauth_denied`);
   }
   try {
     const tokens = await gws.exchangeCode(String(code));
-    await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'google'");
+    await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'google' AND company_id = ?", companyId);
     await db.run(
-      `INSERT INTO integrations (provider, access_token, refresh_token, token_expiry, is_active)
-       VALUES ('google', ?, ?, ?, 1)`,
+      `INSERT INTO integrations (provider, access_token, refresh_token, token_expiry, is_active, company_id)
+       VALUES ('google', ?, ?, ?, 1, ?)`,
       tokens.access_token,
       tokens.refresh_token ?? null,
       tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
+      companyId,
     );
     res.redirect(`${CLIENT_URL}/admin/integrations?connected=google`);
   } catch (err) {
@@ -39,23 +41,25 @@ router.get('/google/callback', async (req, res) => {
 // ─── MICROSOFT OAUTH FLOW ─────────────────────────────────────────────────────
 
 router.get('/microsoft/connect-url', authenticate, requireRole('admin'), (req, res) => {
-  res.json({ url: mgs.getAuthUrl() });
+  res.json({ url: mgs.getAuthUrl(req.user.company_id || 1) });
 });
 
 router.get('/microsoft/callback', async (req, res) => {
-  const { code, error } = req.query;
+  const { code, error, state } = req.query;
+  const companyId = parseInt(state) || 1;
   if (error || !code) {
     return res.redirect(`${CLIENT_URL}/admin/integrations?error=oauth_denied&provider=microsoft`);
   }
   try {
     const tokens = await mgs.exchangeCode(String(code));
-    await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'microsoft'");
+    await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'microsoft' AND company_id = ?", companyId);
     await db.run(
-      `INSERT INTO integrations (provider, access_token, refresh_token, token_expiry, is_active)
-       VALUES ('microsoft', ?, ?, ?, 1)`,
+      `INSERT INTO integrations (provider, access_token, refresh_token, token_expiry, is_active, company_id)
+       VALUES ('microsoft', ?, ?, ?, 1, ?)`,
       tokens.access_token,
       tokens.refresh_token ?? null,
       tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000).toISOString() : null,
+      companyId,
     );
     res.redirect(`${CLIENT_URL}/admin/integrations?connected=microsoft`);
   } catch (err) {
@@ -67,9 +71,10 @@ router.get('/microsoft/callback', async (req, res) => {
 // ─── STATUS ───────────────────────────────────────────────────────────────────
 
 router.get('/', authenticate, requireRole('admin'), async (req, res) => {
+  const companyId = req.user.company_id || 1;
   const [googleInt, microsoftInt] = await Promise.all([
-    gws.getIntegration(),
-    mgs.getIntegration(),
+    gws.getIntegration(companyId),
+    mgs.getIntegration(companyId),
   ]);
 
   const ACTIONS = ['password_reset', 'account_unlock', 'access_grant'];
@@ -98,19 +103,22 @@ router.get('/', authenticate, requireRole('admin'), async (req, res) => {
 // ─── DISCONNECT ───────────────────────────────────────────────────────────────
 
 router.delete('/google', authenticate, requireRole('admin'), async (req, res) => {
-  await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'google'");
+  const companyId = req.user.company_id || 1;
+  await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'google' AND company_id = ?", companyId);
   res.json({ ok: true });
 });
 
 router.delete('/microsoft', authenticate, requireRole('admin'), async (req, res) => {
-  await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'microsoft'");
+  const companyId = req.user.company_id || 1;
+  await db.run("UPDATE integrations SET is_active = 0 WHERE provider = 'microsoft' AND company_id = ?", companyId);
   res.json({ ok: true });
 });
 
 // ─── MICROSOFT CONFIG (Teams webhook URL etc.) ────────────────────────────────
 
 router.patch('/microsoft', authenticate, requireRole('admin'), async (req, res) => {
-  const integration = await mgs.getIntegration();
+  const companyId = req.user.company_id || 1;
+  const integration = await mgs.getIntegration(companyId);
   if (!integration) return res.status(404).json({ error: 'Microsoft 365 not connected' });
 
   const existing = integration.metadata ? JSON.parse(integration.metadata) : {};
@@ -118,8 +126,8 @@ router.patch('/microsoft', authenticate, requireRole('admin'), async (req, res) 
   if (teams_webhook_url !== undefined) existing.teams_webhook_url = teams_webhook_url || null;
 
   await db.run(
-    "UPDATE integrations SET metadata = ? WHERE provider = 'microsoft' AND is_active = 1",
-    JSON.stringify(existing),
+    "UPDATE integrations SET metadata = ? WHERE provider = 'microsoft' AND is_active = 1 AND company_id = ?",
+    JSON.stringify(existing), companyId,
   );
   res.json({ ok: true });
 });
@@ -128,11 +136,12 @@ router.patch('/microsoft', authenticate, requireRole('admin'), async (req, res) 
 
 router.get('/user-context', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { email } = req.query;
+  const companyId = req.user.company_id || 1;
   if (!email) return res.status(400).json({ error: 'email required' });
 
   const [googleRes, microsoftRes] = await Promise.allSettled([
-    gws.lookupUser(email),
-    mgs.lookupUser(email),
+    gws.lookupUser(email, companyId),
+    mgs.lookupUser(email, companyId),
   ]);
 
   res.json({
@@ -145,14 +154,15 @@ router.get('/user-context', authenticate, requireRole('it_staff', 'admin'), asyn
 
 router.get('/actions', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { ticket_id, status } = req.query;
+  const companyId = req.user.company_id || 1;
   let query = `
     SELECT aa.*, t.title as ticket_title, u.name as approver_name
     FROM atlas_actions aa
     JOIN tickets t ON aa.ticket_id = t.id
     LEFT JOIN users u ON aa.approved_by = u.id
-    WHERE 1=1
+    WHERE t.company_id = ?
   `;
-  const params = [];
+  const params = [companyId];
   if (ticket_id) { query += ' AND aa.ticket_id = ?'; params.push(ticket_id); }
   if (status)    { query += ' AND aa.status = ?';    params.push(status); }
   query += ' ORDER BY aa.requested_at DESC LIMIT 50';
@@ -161,7 +171,11 @@ router.get('/actions', authenticate, requireRole('it_staff', 'admin'), async (re
 
 // Update details on a pending action (drive_id / site_id / role)
 router.patch('/actions/:id', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
-  const action = await db.get('SELECT * FROM atlas_actions WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const action = await db.get(
+    'SELECT aa.* FROM atlas_actions aa JOIN tickets t ON aa.ticket_id = t.id WHERE aa.id = ? AND t.company_id = ?',
+    req.params.id, companyId
+  );
   if (!action)                    return res.status(404).json({ error: 'Action not found' });
   if (action.status !== 'pending') return res.status(409).json({ error: 'Action already handled' });
 
@@ -178,9 +192,13 @@ router.patch('/actions/:id', authenticate, requireRole('it_staff', 'admin'), asy
 // Approve + execute
 router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   console.log('[approve] ▶ handler reached — user:', req.user?.id, 'role:', req.user?.role, 'action id:', req.params.id);
+  const companyId = req.user.company_id || 1;
   let action = null;
   try {
-    action = await db.get('SELECT * FROM atlas_actions WHERE id = ?', req.params.id);
+    action = await db.get(
+      'SELECT aa.* FROM atlas_actions aa JOIN tickets t ON aa.ticket_id = t.id WHERE aa.id = ? AND t.company_id = ?',
+      req.params.id, companyId
+    );
     console.log('[approve] action fetched:', action ? `type=${action.action_type} status=${action.status} provider=${action.provider}` : 'NOT FOUND');
 
     if (!action)                     return res.status(404).json({ error: 'Action not found' });
@@ -203,8 +221,8 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
     if (action_type === 'password_reset') {
       console.log('[approve] calling resetPassword for:', target_email, 'via', provider);
       const { tempPassword } = isMs
-        ? await mgs.resetPassword(target_email)
-        : await gws.resetPassword(target_email);
+        ? await mgs.resetPassword(target_email, companyId)
+        : await gws.resetPassword(target_email, companyId);
 
       const submitter = await db.get(
         'SELECT name, email FROM users WHERE id = (SELECT submitter_id FROM tickets WHERE id = ?)',
@@ -229,7 +247,7 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
 
     } else if (action_type === 'account_unlock') {
       console.log('[approve] calling unlockAccount for:', target_email, 'via', provider);
-      isMs ? await mgs.unlockAccount(target_email) : await gws.unlockAccount(target_email);
+      isMs ? await mgs.unlockAccount(target_email, companyId) : await gws.unlockAccount(target_email, companyId);
 
       result = `Account enabled for ${target_email} via ${platformLabel}.`;
       await db.run(
@@ -248,7 +266,7 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
           return res.status(400).json({ error: 'SharePoint site ID is required before approving an access grant' });
         }
         console.log('[approve] calling grantSharePointAccess:', details.site_id, target_email);
-        await mgs.grantSharePointAccess(details.site_id, target_email, details.role || 'read');
+        await mgs.grantSharePointAccess(details.site_id, target_email, details.role || 'read', companyId);
         const roleLabel = details.role || 'read';
         result = `SharePoint access granted: ${target_email} → ${details.site_id} (${roleLabel}).`;
         await db.run(
@@ -265,7 +283,7 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
           return res.status(400).json({ error: 'Drive folder ID is required before approving an access grant' });
         }
         console.log('[approve] calling grantDriveAccess:', details.drive_id, target_email);
-        await gws.grantDriveAccess(details.drive_id, target_email, details.role || 'reader');
+        await gws.grantDriveAccess(details.drive_id, target_email, details.role || 'reader', companyId);
         const roleLabel = details.role || 'reader';
         result = `Drive access granted: ${target_email} → ${details.drive_id} (${roleLabel}).`;
         await db.run(
@@ -290,6 +308,7 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
     mgs.sendTeamsNotification(
       `${action_type.replace('_', ' ')} executed for ${target_email} (Ticket #${ticket_id}). ${result}`,
       '✅ ATLAS Action Approved',
+      companyId,
     ).catch(() => {});
 
     res.json({ ok: true, result });
@@ -309,7 +328,11 @@ router.post('/actions/:id/approve', authenticate, requireRole('it_staff', 'admin
 
 // Deny
 router.post('/actions/:id/deny', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
-  const action = await db.get('SELECT * FROM atlas_actions WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const action = await db.get(
+    'SELECT aa.* FROM atlas_actions aa JOIN tickets t ON aa.ticket_id = t.id WHERE aa.id = ? AND t.company_id = ?',
+    req.params.id, companyId
+  );
   if (!action)                    return res.status(404).json({ error: 'Action not found' });
   if (action.status !== 'pending') return res.status(409).json({ error: 'Action already handled' });
 

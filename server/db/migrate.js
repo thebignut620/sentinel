@@ -527,6 +527,45 @@ export async function runMigrations() {
   await addColumnIfMissing('satisfaction_ratings', 'communication_rating', 'INTEGER');
   await addColumnIfMissing('satisfaction_ratings', 'atlas_rating', 'INTEGER');
   await addColumnIfMissing('satisfaction_ratings', 'nps_score', 'INTEGER');
+  await addColumnIfMissing('atlas_actions', 'company_id', 'INTEGER NOT NULL DEFAULT 1');
+
+  // Fix departments UNIQUE: drop global name unique, add per-company unique
+  await db.run(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'departments_name_key' AND t.relname = 'departments'
+      ) THEN
+        ALTER TABLE departments DROP CONSTRAINT departments_name_key;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'departments_company_name_key' AND t.relname = 'departments'
+      ) THEN
+        ALTER TABLE departments ADD CONSTRAINT departments_company_name_key UNIQUE (company_id, name);
+      END IF;
+    END $$;
+  `);
+
+  // Fix monthly_reports UNIQUE: drop global report_month unique, add per-company unique
+  await db.run(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'monthly_reports_report_month_key' AND t.relname = 'monthly_reports'
+      ) THEN
+        ALTER TABLE monthly_reports DROP CONSTRAINT monthly_reports_report_month_key;
+      END IF;
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint c JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'monthly_reports_company_month_key' AND t.relname = 'monthly_reports'
+      ) THEN
+        ALTER TABLE monthly_reports ADD CONSTRAINT monthly_reports_company_month_key UNIQUE (company_id, report_month);
+      END IF;
+    END $$;
+  `);
 
   // Settings: add company_id column, change PK to (company_id, key)
   await db.run(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_id INTEGER NOT NULL DEFAULT 1`);

@@ -61,13 +61,14 @@ async function checkAutoKBPromotion(solutionId) {
     if (!article) return;
 
     const { lastInsertRowid } = await db.run(
-      `INSERT INTO knowledge_base (title, category, problem, solution, steps)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO knowledge_base (title, category, problem, solution, steps, company_id)
+       VALUES (?, ?, ?, ?, ?, ?)`,
       article.title,
       sol.category,
       article.problem,
       article.solution,
-      JSON.stringify(article.steps || [])
+      JSON.stringify(article.steps || []),
+      sol.company_id || 1
     );
 
     await db.run(
