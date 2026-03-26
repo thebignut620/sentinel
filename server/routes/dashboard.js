@@ -7,12 +7,19 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   const isEmployee = req.user.role === 'employee';
   const companyId = req.user.company_id || 1;
+  const sessionStart = req.query.session_start || null;
 
   // Build WHERE clause: always scope by company, optionally also by submitter
-  const whereUser = isEmployee
+  let whereUser = isEmployee
     ? 'WHERE t.submitter_id = ? AND t.company_id = ?'
     : 'WHERE t.company_id = ?';
-  const params = isEmployee ? [req.user.id, companyId] : [companyId];
+  let params = isEmployee ? [req.user.id, companyId] : [companyId];
+
+  // When a session start is provided, restrict to tickets from that date forward
+  if (sessionStart) {
+    whereUser += ' AND t.created_at >= ?';
+    params = [...params, sessionStart];
+  }
 
   const [
     statusCounts,

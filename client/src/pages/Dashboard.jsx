@@ -198,14 +198,15 @@ function ActivityFeed({ items }) {
 }
 
 // ── Health Score Widget ────────────────────────────────────────────────────────
-function HealthScoreWidget() {
+function HealthScoreWidget({ sessionStart, sessionName }) {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    api.get('/analytics/health-score')
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    api.get('/analytics/health-score', { params })
       .then(r => setData(r.data))
       .catch(() => {});
-  }, []);
+  }, [sessionStart]);
 
   if (!data) return null;
 
@@ -214,6 +215,10 @@ function HealthScoreWidget() {
   const bgColor = score >= 85 ? 'border-green-900/60' : score >= 70 ? 'border-amber-900/60' : 'border-red-900/60';
   const circumference = 2 * Math.PI * 40;
   const offset = circumference - (score / 100) * circumference;
+
+  const periodLabel = sessionStart
+    ? (sessionName ? `Session: ${sessionName}` : 'Current session')
+    : 'Last 30 days';
 
   const LABELS = {
     resolution: 'Resolution Rate',
@@ -245,7 +250,7 @@ function HealthScoreWidget() {
             <text x="70" y="101" textAnchor="middle" fontSize="18" fontWeight="bold" fill={color}>{data.grade}</text>
           </svg>
           <p className="text-xs text-gray-500">Sentinel Health Score</p>
-          <p className="text-[10px] text-gray-600">Last 30 days</p>
+          <p className="text-[10px] text-gray-600">{periodLabel}</p>
         </div>
 
         {/* Breakdown */}
@@ -389,27 +394,39 @@ export default function Dashboard() {
   const [error, setError]   = useState(null);
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [currentSession, setCurrentSession]     = useState(null);
+  const [sessionStart, setSessionStart]         = useState(null);
+  // For employees, skip session fetch entirely
+  const [sessionLoaded, setSessionLoaded]       = useState(user?.role === 'employee');
 
+  // 1. Fetch active session (admin/staff only) — runs once on mount
   useEffect(() => {
-    console.log('[Dashboard] fetching /dashboard for role:', user?.role);
-    api.get('/dashboard')
+    if (user?.role === 'employee') return;
+    api.get('/sessions')
       .then(r => {
-        console.log('[Dashboard] response:', r.status, r.data);
-        setStats(r.data);
+        if (r.data?.length > 0) {
+          setCurrentSession(r.data[0]);
+          setSessionStart(r.data[0].started_at);
+        }
       })
+      .catch(() => {})
+      .finally(() => setSessionLoaded(true));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 2. Fetch dashboard stats — waits for session check, re-runs when sessionStart changes
+  useEffect(() => {
+    if (!sessionLoaded) return;
+    setLoading(true);
+    setError(null);
+    const params = sessionStart ? { session_start: sessionStart } : {};
+    console.log('[Dashboard] fetching stats, session_start:', sessionStart);
+    api.get('/dashboard', { params })
+      .then(r => setStats(r.data))
       .catch(err => {
         console.error('[Dashboard] error:', err.response?.status, err.response?.data, err.message);
         setError(err.response?.data?.error || err.message);
       })
       .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(() => {
-    if (user?.role === 'employee') return;
-    api.get('/sessions').then(r => {
-      if (r.data?.length > 0) setCurrentSession(r.data[0]);
-    }).catch(() => {});
-  }, [user?.role]);
+  }, [sessionLoaded, sessionStart]);
 
   const ticketsLink = user.role === 'employee' ? '/my-tickets' : '/tickets';
 
@@ -444,8 +461,9 @@ export default function Dashboard() {
 
   const handleSessionSuccess = (session) => {
     setCurrentSession(session);
+    setSessionStart(session.started_at); // triggers dashboard re-fetch via useEffect
     setShowSessionModal(false);
-    addToast(`Session "${session.name}" started successfully.`, 'success');
+    addToast(`Session "${session.name}" started. Dashboard updated.`, 'success');
   };
 
   return (
@@ -464,14 +482,19 @@ export default function Dashboard() {
           <h1 className="text-xl sm:text-2xl font-bold text-white">{greeting}, {user.name.split(' ')[0]} 👋</h1>
           <p className="text-gray-500 text-xs sm:text-sm mt-0.5 capitalize">{user.role.replace('_', ' ')} · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
           {/* Current session indicator — admin/staff only */}
-          {currentSession && (
-            <p className="text-xs text-pine-500 mt-0.5 flex items-center gap-1">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="3" fill="currentColor" />
-              </svg>
-              {currentSession.name} · started {new Date(currentSession.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </p>
-          )}
+          {currentSession && (() => {
+            const daysRunning = Math.max(0, Math.floor((Date.now() - new Date(currentSession.started_at)) / 86400000));
+            return (
+              <p className="text-xs text-pine-500 mt-0.5 flex items-center gap-1">
+                <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="12" r="4" />
+                </svg>
+                <span className="font-medium">{currentSession.name}</span>
+                <span className="text-pine-700">·</span>
+                <span>{daysRunning === 0 ? 'started today' : `${daysRunning} day${daysRunning !== 1 ? 's' : ''} running`}</span>
+              </p>
+            );
+          })()}
         </div>
 
         {/* Quick actions */}
@@ -507,8 +530,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Health Score — admin/staff only, prominent at top */}
-      {user.role !== 'employee' && <HealthScoreWidget />}
+      {/* Health Score — admin/staff only, filtered by active session */}
+      {user.role !== 'employee' && (
+        <HealthScoreWidget sessionStart={sessionStart} sessionName={currentSession?.name} />
+      )}
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
