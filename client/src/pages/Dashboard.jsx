@@ -214,7 +214,7 @@ function HealthScoreWidget({ sessionStart, sessionName }) {
   const score = data.score;
   const color = score >= 85 ? '#4aaa4a' : score >= 70 ? '#fbbf24' : '#ef4444';
   const bgColor = score >= 85 ? 'border-green-900/60' : score >= 70 ? 'border-amber-900/60' : 'border-red-900/60';
-  const circumference = 2 * Math.PI * 40;
+  const circumference = 2 * Math.PI * 60;
   const offset = circumference - (score / 100) * circumference;
 
   const periodLabel = sessionStart
@@ -229,6 +229,55 @@ function HealthScoreWidget({ sessionStart, sessionName }) {
     volumeTrend: 'Volume Trend',
     recurringIssues: 'Recurring Issues',
   };
+
+  // Fresh session: zero tickets, perfect score
+  if (data.fresh) {
+    return (
+      <div className="card p-6 border border-green-900/60">
+        <div className="flex flex-col md:flex-row md:items-center gap-6">
+          <div className="flex flex-col items-center gap-1 shrink-0 mx-auto md:mx-0">
+            <svg width="120" height="120" viewBox="0 0 140 140" className="w-28 h-28 sm:w-36 sm:h-36">
+              <circle cx="70" cy="70" r="60" fill="none" stroke="#1f2937" strokeWidth="12" />
+              <circle
+                cx="70" cy="70" r="60" fill="none"
+                stroke="#4aaa4a" strokeWidth="12"
+                strokeLinecap="round"
+                strokeDasharray={circumference}
+                strokeDashoffset={0}
+                transform="rotate(-90 70 70)"
+                style={{ transition: 'stroke-dashoffset 1.2s ease' }}
+              />
+              <text x="70" y="62" textAnchor="middle" fontSize="28" fontWeight="bold" fill="#4aaa4a">100</text>
+              <text x="70" y="82" textAnchor="middle" fontSize="13" fill="#9ca3af">/ 100</text>
+              <text x="70" y="101" textAnchor="middle" fontSize="18" fontWeight="bold" fill="#4aaa4a">A</text>
+            </svg>
+            <p className="text-xs text-gray-500">Sentinel Health Score</p>
+            <p className="text-[10px] text-gray-600">{periodLabel}</p>
+          </div>
+          <div className="flex-1">
+            <h2 className="text-white font-semibold text-base mb-2">System Health Breakdown</h2>
+            <p className="text-pine-400 text-sm font-medium">{data.message}</p>
+            <p className="text-gray-500 text-xs mt-2">
+              All metrics will populate as tickets are submitted this session.
+            </p>
+            <div className="mt-4 space-y-2">
+              {Object.entries(LABELS).map(([key, label]) => (
+                <div key={key} className="flex items-center gap-3 text-sm">
+                  <span className="text-gray-500 w-24 sm:w-36 shrink-0 text-xs">{label}</span>
+                  <div className="flex-1 h-2 bg-pine-900/40 rounded-full overflow-hidden">
+                    <div className="h-full w-full bg-pine-600/50 rounded-full" />
+                  </div>
+                  <span className="text-gray-600 w-12 text-right text-xs font-mono">
+                    {data.breakdown[key].score}/{data.breakdown[key].max}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`card p-6 border ${bgColor}`}>
@@ -257,18 +306,26 @@ function HealthScoreWidget({ sessionStart, sessionName }) {
         {/* Breakdown */}
         <div className="flex-1 space-y-2.5">
           <h2 className="text-white font-semibold text-base mb-3">System Health Breakdown</h2>
-          {Object.entries(data.breakdown).map(([key, b]) => (
-            <div key={key} className="flex items-center gap-3 text-sm">
-              <span className="text-gray-400 w-24 sm:w-36 shrink-0 text-xs sm:text-sm">{LABELS[key]}</span>
-              <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${(b.score / b.max) * 100}%`, background: color }}
-                />
+          {Object.entries(data.breakdown).map(([key, b]) => {
+            const isNoTrend = key === 'volumeTrend' && b.hasPrevious === false;
+            return (
+              <div key={key} className="flex items-center gap-3 text-sm">
+                <span className="text-gray-400 w-24 sm:w-36 shrink-0 text-xs sm:text-sm">{LABELS[key]}</span>
+                <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{
+                      width: isNoTrend ? '100%' : `${(b.score / b.max) * 100}%`,
+                      background: isNoTrend ? '#374151' : color,
+                    }}
+                  />
+                </div>
+                <span className="text-gray-300 w-16 text-right text-xs font-mono">
+                  {isNoTrend ? '— / 10' : `${b.score}/${b.max}`}
+                </span>
               </div>
-              <span className="text-gray-300 w-12 text-right text-xs font-mono">{b.score}/{b.max}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       {score < 70 && (

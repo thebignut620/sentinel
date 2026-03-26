@@ -651,37 +651,64 @@ router.get('/reports/monthly/:id/pdf', authenticate, async (req, res) => {
 // GET /api/analytics/health-score — Sentinel Health Score (0-100)
 router.get('/health-score', authenticate, async (req, res) => {
   const companyId = req.user.company_id || 1;
+  const { session_start } = req.query;
   try {
     const now = new Date();
-    // Use session_start when provided; otherwise default to last 30 days
-    const fromDate = req.query.session_start
-      ? new Date(req.query.session_start)
+    const fromDate = session_start
+      ? new Date(session_start)
       : new Date(now - 30 * 24 * 60 * 60 * 1000);
-    // Previous period of equal length (for volume trend comparison)
-    const prevFromDate = new Date(fromDate.getTime() - (now.getTime() - fromDate.getTime()));
-    console.log(`[health-score] company=${companyId} session_start=${req.query.session_start || 'none'} fromDate=${fromDate.toISOString()} prevFromDate=${prevFromDate.toISOString()} windowDays=${Math.round((now - fromDate) / 86400000)}`);
+
+    // Minimum window of 1 day — avoids zero-window issues on brand-new sessions
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    const windowMs = Math.max(now.getTime() - fromDate.getTime(), ONE_DAY_MS);
+    const windowDays = Math.round(windowMs / 86400000);
+
+    console.log(`[health-score] company=${companyId} session_start=${session_start || 'none'} fromDate=${fromDate.toISOString()} windowDays=${windowDays}`);
+
+    // Total tickets in current window
+    const totalRow = await db.get(
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= ? AND company_id = ?`, fromDate, companyId
+    );
+    const total = parseInt(totalRow.cnt) || 0;
+
+    // FRESH SESSION: zero tickets = perfect score (no problems reported yet)
+    if (total === 0 && session_start) {
+      console.log(`[health-score] FRESH SESSION — zero tickets, returning 100`);
+      return res.json({
+        score: 100,
+        grade: 'A',
+        fresh: true,
+        message: 'No tickets yet — systems running clean.',
+        breakdown: {
+          resolution:       { score: 25, max: 25, rate: 100 },
+          avgResolutionTime:{ score: 20, max: 20, hours: null },
+          satisfaction:     { score: 20, max: 20, rate: null },
+          atlasAutonomy:    { score: 15, max: 15, rate: 0 },
+          volumeTrend:      { score: 10, max: 10, ratio: null, hasPrevious: false },
+          recurringIssues:  { score: 10, max: 10, maxCategoryPct: 0 },
+        },
+      });
+    }
 
     // Resolution rate (25 pts)
-    const totalTickets = await db.get(
-      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND company_id = $2`, fromDate, companyId
+    const resolvedRow = await db.get(
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= ? AND status IN ('resolved','closed') AND company_id = ?`,
+      fromDate, companyId
     );
-    const resolvedTickets = await db.get(
-      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND status IN ('resolved','closed') AND company_id = $2`, fromDate, companyId
-    );
-    const total = parseInt(totalTickets.cnt) || 0;
-    const resolved = parseInt(resolvedTickets.cnt) || 0;
+    const resolved = parseInt(resolvedRow.cnt) || 0;
     const resolutionRate = total > 0 ? resolved / total : 1;
     const resolutionScore = Math.round(resolutionRate * 25);
 
     // Avg resolution time (20 pts)
     const avgTimeRow = await db.get(
       `SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_hours
-       FROM tickets WHERE resolved_at IS NOT NULL AND created_at >= $1 AND company_id = $2`, fromDate, companyId
+       FROM tickets WHERE resolved_at IS NOT NULL AND created_at >= ? AND company_id = ?`,
+      fromDate, companyId
     );
-    const avgHours = parseFloat(avgTimeRow.avg_hours) || 48;
+    const avgHours = parseFloat(avgTimeRow?.avg_hours) || 48;
     let timeScore = 0;
-    if (avgHours <= 4) timeScore = 20;
-    else if (avgHours <= 8) timeScore = 16;
+    if (avgHours <= 4)  timeScore = 20;
+    else if (avgHours <= 8)  timeScore = 16;
     else if (avgHours <= 24) timeScore = 12;
     else if (avgHours <= 48) timeScore = 8;
     else if (avgHours <= 72) timeScore = 4;
@@ -692,10 +719,11 @@ router.get('/health-score', authenticate, async (req, res) => {
               SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) as positive
        FROM satisfaction_ratings sr
        JOIN tickets t ON sr.ticket_id = t.id
-       WHERE sr.submitted_at IS NOT NULL AND sr.sent_at >= $1 AND t.company_id = $2`, fromDate, companyId
+       WHERE sr.submitted_at IS NOT NULL AND sr.sent_at >= ? AND t.company_id = ?`,
+      fromDate, companyId
     );
-    const satTotal = parseInt(satRow.total) || 0;
-    const satPositive = parseInt(satRow.positive) || 0;
+    const satTotal = parseInt(satRow?.total) || 0;
+    const satPositive = parseInt(satRow?.positive) || 0;
     const satRate = satTotal > 0 ? satPositive / satTotal : 0.8;
     const satScore = Math.round(satRate * 20);
 
@@ -703,58 +731,94 @@ router.get('/health-score', authenticate, async (req, res) => {
     const atlasRow = await db.get(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN ai_attempted=1 AND assignee_id IS NULL THEN 1 ELSE 0 END) as autonomous
-       FROM tickets WHERE created_at >= $1 AND company_id = $2`, fromDate, companyId
+       FROM tickets WHERE created_at >= ? AND company_id = ?`,
+      fromDate, companyId
     );
-    const atlasTotal = parseInt(atlasRow.total) || 0;
-    const atlasAuto = parseInt(atlasRow.autonomous) || 0;
-    const atlasRate = atlasTotal > 0 ? atlasAuto / atlasTotal : 0;
+    const atlasTotal = parseInt(atlasRow?.total) || 0;
+    const atlasAuto  = parseInt(atlasRow?.autonomous) || 0;
+    const atlasRate  = atlasTotal > 0 ? atlasAuto / atlasTotal : 0;
     const atlasScore = Math.round(atlasRate * 15);
 
-    // Volume trend (10 pts) — compare current period to equal-length prior period
-    const prevPeriod = await db.get(
-      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND created_at < $2 AND company_id = $3`,
-      prevFromDate, fromDate, companyId
-    );
-    const prevTotal = parseInt(prevPeriod.cnt) || total;
-    const trendRatio = prevTotal > 0 ? total / prevTotal : 1;
+    // Volume trend (10 pts)
+    // For a session: compare against the previous session's ticket count.
+    // Without a session: compare against equal-length window before fromDate.
     let trendScore = 10;
-    if (trendRatio > 1.3) trendScore = 4;
-    else if (trendRatio > 1.1) trendScore = 7;
+    let trendRatio = 1;
+    let hasPrevious = false;
+
+    if (session_start) {
+      // Look up the session that started just before the current one
+      const prevSession = await db.get(
+        `SELECT started_at FROM sessions WHERE company_id = ? AND started_at < ? ORDER BY started_at DESC LIMIT 1`,
+        companyId, fromDate
+      );
+      if (prevSession) {
+        hasPrevious = true;
+        const prevStart = new Date(prevSession.started_at);
+        const prevRow = await db.get(
+          `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= ? AND created_at < ? AND company_id = ?`,
+          prevStart, fromDate, companyId
+        );
+        const prevTotal = parseInt(prevRow?.cnt) || total;
+        trendRatio = prevTotal > 0 ? total / prevTotal : 1;
+        if (trendRatio > 1.3) trendScore = 4;
+        else if (trendRatio > 1.1) trendScore = 7;
+        console.log(`[health-score] trend: prevSession=${prevSession.started_at} prevTotal=${prevTotal} currTotal=${total} ratio=${trendRatio.toFixed(2)}`);
+      } else {
+        // No previous session — neutral trend, full points
+        hasPrevious = false;
+        console.log(`[health-score] trend: no previous session — awarding full trend points`);
+      }
+    } else {
+      // Default 30-day window: compare against equal-length window before fromDate
+      hasPrevious = true;
+      const prevFromDate = new Date(fromDate.getTime() - windowMs);
+      const prevRow = await db.get(
+        `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= ? AND created_at < ? AND company_id = ?`,
+        prevFromDate, fromDate, companyId
+      );
+      const prevTotal = parseInt(prevRow?.cnt) || total;
+      trendRatio = prevTotal > 0 ? total / prevTotal : 1;
+      if (trendRatio > 1.3) trendScore = 4;
+      else if (trendRatio > 1.1) trendScore = 7;
+    }
 
     // Recurring issues (10 pts)
     const catRows = await db.all(
-      `SELECT category, COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND company_id = $2 GROUP BY category`, fromDate, companyId
+      `SELECT category, COUNT(*) as cnt FROM tickets WHERE created_at >= ? AND company_id = ? GROUP BY category`,
+      fromDate, companyId
     );
     const maxCatPct = total > 0
       ? Math.max(...catRows.map(r => parseInt(r.cnt) / total))
       : 0;
     let recurringScore = 10;
-    if (maxCatPct > 0.5) recurringScore = 2;
+    if (maxCatPct > 0.5)       recurringScore = 2;
     else if (maxCatPct > 0.35) recurringScore = 5;
     else if (maxCatPct > 0.25) recurringScore = 8;
 
     const score = resolutionScore + timeScore + satScore + atlasScore + trendScore + recurringScore;
-
     let grade = 'A';
     if (score < 40) grade = 'F';
     else if (score < 55) grade = 'D';
     else if (score < 70) grade = 'C';
     else if (score < 85) grade = 'B';
 
+    console.log(`[health-score] score=${score} grade=${grade} (res=${resolutionScore} time=${timeScore} sat=${satScore} atlas=${atlasScore} trend=${trendScore} recurring=${recurringScore})`);
+
     res.json({
       score,
       grade,
       breakdown: {
-        resolution: { score: resolutionScore, max: 25, rate: Math.round(resolutionRate * 100) },
-        avgResolutionTime: { score: timeScore, max: 20, hours: Math.round(avgHours * 10) / 10 },
-        satisfaction: { score: satScore, max: 20, rate: Math.round(satRate * 100) },
-        atlasAutonomy: { score: atlasScore, max: 15, rate: Math.round(atlasRate * 100) },
-        volumeTrend: { score: trendScore, max: 10, ratio: Math.round(trendRatio * 100) / 100 },
-        recurringIssues: { score: recurringScore, max: 10, maxCategoryPct: Math.round(maxCatPct * 100) },
+        resolution:        { score: resolutionScore, max: 25, rate: Math.round(resolutionRate * 100) },
+        avgResolutionTime: { score: timeScore,        max: 20, hours: Math.round(avgHours * 10) / 10 },
+        satisfaction:      { score: satScore,         max: 20, rate: Math.round(satRate * 100) },
+        atlasAutonomy:     { score: atlasScore,       max: 15, rate: Math.round(atlasRate * 100) },
+        volumeTrend:       { score: trendScore,       max: 10, ratio: hasPrevious ? Math.round(trendRatio * 100) / 100 : null, hasPrevious },
+        recurringIssues:   { score: recurringScore,   max: 10, maxCategoryPct: Math.round(maxCatPct * 100) },
       },
     });
   } catch (e) {
-    console.error(e);
+    console.error('[health-score] error:', e);
     res.status(500).json({ error: e.message });
   }
 });
