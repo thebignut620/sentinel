@@ -64,20 +64,30 @@ app.use(helmet({
   contentSecurityPolicy: false, // API server — no CSP needed
 }));
 
-// ─── CORS — hardened to known origins ─────────────────────────────────────────
-const ALLOWED_ORIGINS = new Set([
+// ─── CORS — allow production domains + all Vercel preview deploys ─────────────
+const ALLOWED_EXACT = new Set([
   'https://sentinelaiapp.com',
   'https://www.sentinelaiapp.com',
-  'https://sentinel-eta-woad.vercel.app',
   'http://localhost:5173',
   'http://localhost:4173',
 ]);
 
+function isAllowedOrigin(origin) {
+  if (!origin) return true; // curl, Postman, server-to-server
+  if (ALLOWED_EXACT.has(origin)) return true;
+  // Allow any Vercel preview URL (*.vercel.app)
+  try {
+    const { hostname } = new URL(origin);
+    if (hostname.endsWith('.vercel.app')) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 app.use(cors({
   origin: (origin, cb) => {
-    // Allow requests with no origin (curl, Postman, server-to-server)
-    if (!origin) return cb(null, true);
-    if (ALLOWED_ORIGINS.has(origin)) return cb(null, true);
+    if (isAllowedOrigin(origin)) return cb(null, true);
     cb(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
