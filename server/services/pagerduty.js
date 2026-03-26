@@ -1,13 +1,14 @@
 import db from '../db/connection.js';
 
-async function getSetting(key) {
-  const row = await db.get('SELECT value FROM settings WHERE key = ?', key);
+async function getSetting(key, companyId = 1) {
+  const row = await db.get('SELECT value FROM settings WHERE key = ? AND company_id = ?', key, companyId);
   return row?.value || null;
 }
 
 export async function createPagerDutyIncident(ticket) {
   try {
-    const routingKey = await getSetting('pagerduty_routing_key');
+    const companyId = ticket.company_id || 1;
+    const routingKey = await getSetting('pagerduty_routing_key', companyId);
     if (!routingKey) return;
 
     const res = await fetch('https://events.pagerduty.com/v2/enqueue', {
@@ -44,30 +45,35 @@ export async function createPagerDutyIncident(ticket) {
 
 export async function checkCriticalUnassignedTickets() {
   try {
-    const enabled = await getSetting('pagerduty_enabled');
-    if (enabled !== 'true') return;
-
-    const routingKey = await getSetting('pagerduty_routing_key');
-    if (!routingKey) return;
-
-    // Critical tickets older than 15 min with no assignee action taken
+    const companies = await db.all('SELECT id FROM companies ORDER BY id ASC');
     const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
-    const tickets = await db.all(`
-      SELECT t.*, u.name as submitter_name
-      FROM tickets t
-      JOIN users u ON t.submitter_id = u.id
-      WHERE t.priority = 'critical'
-        AND t.status IN ('open', 'in_progress')
-        AND t.assignee_id IS NULL
-        AND t.created_at < ?
-    `, cutoff);
 
-    for (const ticket of tickets) {
-      await createPagerDutyIncident(ticket);
-    }
+    for (const { id: companyId } of companies) {
+      const enabled = await getSetting('pagerduty_enabled', companyId);
+      if (enabled !== 'true') continue;
 
-    if (tickets.length > 0) {
-      console.log(`[PagerDuty Cron] Triggered ${tickets.length} incident(s) for unassigned critical tickets`);
+      const routingKey = await getSetting('pagerduty_routing_key', companyId);
+      if (!routingKey) continue;
+
+      // Critical tickets older than 15 min with no assignee action taken
+      const tickets = await db.all(`
+        SELECT t.*, u.name as submitter_name
+        FROM tickets t
+        JOIN users u ON t.submitter_id = u.id
+        WHERE t.priority = 'critical'
+          AND t.status IN ('open', 'in_progress')
+          AND t.assignee_id IS NULL
+          AND t.created_at < ?
+          AND t.company_id = ?
+      `, cutoff, companyId);
+
+      for (const ticket of tickets) {
+        await createPagerDutyIncident(ticket);
+      }
+
+      if (tickets.length > 0) {
+        console.log(`[PagerDuty Cron] Triggered ${tickets.length} incident(s) for company ${companyId}`);
+      }
     }
   } catch (e) {
     console.error('[PagerDuty Cron] check failed:', e.message);

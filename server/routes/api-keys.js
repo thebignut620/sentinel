@@ -27,13 +27,15 @@ export async function validateApiKey(rawKey) {
 
 // GET /api/api-keys — list all keys (admin only)
 router.get('/', authenticate, requireRole('admin'), async (req, res) => {
+  const companyId = req.user.company_id || 1;
   const keys = await db.all(`
     SELECT ak.id, ak.name, ak.key_prefix, ak.requests_count, ak.rate_limit,
            ak.is_active, ak.last_used_at, ak.created_at, u.name as created_by_name
     FROM api_keys ak
     LEFT JOIN users u ON ak.created_by = u.id
+    WHERE ak.company_id = ?
     ORDER BY ak.created_at DESC
-  `);
+  `, companyId);
   res.json(keys);
 });
 
@@ -42,14 +44,15 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   const { name, rate_limit = 100 } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Name is required' });
 
+  const companyId = req.user.company_id || 1;
   const rawKey = `sk_live_${crypto.randomBytes(24).toString('hex')}`;
   const prefix = rawKey.slice(0, 14); // "sk_live_xxxxxxxx"
   const hash = crypto.createHash('sha256').update(rawKey).digest('hex');
 
   const result = await db.run(
-    `INSERT INTO api_keys (name, key_prefix, key_hash, created_by, rate_limit)
-     VALUES (?, ?, ?, ?, ?)`,
-    name.trim(), prefix, hash, req.user.id, parseInt(rate_limit) || 100
+    `INSERT INTO api_keys (name, key_prefix, key_hash, created_by, rate_limit, company_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    name.trim(), prefix, hash, req.user.id, parseInt(rate_limit) || 100, companyId
   );
 
   const keyId = result.lastID ?? result.lastInsertRowid;
@@ -67,7 +70,8 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
 
 // PATCH /api/api-keys/:id — update key (name, rate_limit, is_active)
 router.patch('/:id', authenticate, requireRole('admin'), async (req, res) => {
-  const key = await db.get('SELECT * FROM api_keys WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const key = await db.get('SELECT * FROM api_keys WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!key) return res.status(404).json({ error: 'API key not found' });
 
   const { name, rate_limit, is_active } = req.body;
@@ -91,7 +95,8 @@ router.patch('/:id', authenticate, requireRole('admin'), async (req, res) => {
 
 // DELETE /api/api-keys/:id — revoke key
 router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
-  const key = await db.get('SELECT * FROM api_keys WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const key = await db.get('SELECT * FROM api_keys WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!key) return res.status(404).json({ error: 'API key not found' });
 
   await db.run('DELETE FROM api_keys WHERE id = ?', req.params.id);

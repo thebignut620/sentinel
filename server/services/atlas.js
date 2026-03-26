@@ -22,8 +22,8 @@ Analysis standards:
 
 Always return valid JSON. Never include any text outside the JSON structure.`;
 
-async function isAIEnabled() {
-  const s = await db.get("SELECT value FROM settings WHERE key = 'ai_enabled'");
+async function isAIEnabled(companyId = 1) {
+  const s = await db.get("SELECT value FROM settings WHERE key = 'ai_enabled' AND company_id = ?", companyId);
   return s?.value === 'true';
 }
 
@@ -40,8 +40,8 @@ function extractJSON(text, fallback) {
 }
 
 // ── Feature 1 + 2 + 3: Analyze ticket — category, priority, sentiment ─────────
-export async function analyzeTicket(title, description) {
-  if (!await isAIEnabled()) return null;
+export async function analyzeTicket(title, description, companyId = 1) {
+  if (!await isAIEnabled(companyId)) return null;
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -101,16 +101,16 @@ Return ONLY the JSON object. No explanation.`,
 }
 
 // ── Feature 4: Find similar past resolved tickets ──────────────────────────────
-export async function findSimilarTickets(ticketId, title, description) {
-  if (!await isAIEnabled()) return [];
+export async function findSimilarTickets(ticketId, title, description, companyId = 1) {
+  if (!await isAIEnabled(companyId)) return [];
   try {
     const resolved = await db.all(`
       SELECT id, title, SUBSTR(description, 1, 150) as description, category
       FROM tickets
-      WHERE status IN ('resolved', 'closed') AND id != ?
+      WHERE status IN ('resolved', 'closed') AND id != ? AND company_id = ?
       ORDER BY resolved_at DESC
       LIMIT 50
-    `, ticketId);
+    `, ticketId, companyId);
 
     if (resolved.length === 0) return [];
 
@@ -153,20 +153,21 @@ Return ONLY the JSON array.`,
 }
 
 // ── Feature 6: Auto-assign to least-loaded staff member ───────────────────────
-export async function autoAssign(submitterId) {
+export async function autoAssign(submitterId, companyId = 1) {
   try {
     const candidates = await db.all(`
       SELECT u.id, u.name, COUNT(t.id) as open_count
       FROM users u
       LEFT JOIN tickets t
-        ON t.assignee_id = u.id AND t.status IN ('open', 'in_progress')
+        ON t.assignee_id = u.id AND t.status IN ('open', 'in_progress') AND t.company_id = ?
       WHERE u.role IN ('it_staff', 'admin')
         AND u.is_active = 1
+        AND u.company_id = ?
         AND u.id != ?
       GROUP BY u.id
       ORDER BY open_count ASC
       LIMIT 1
-    `, submitterId);
+    `, companyId, companyId, submitterId);
     return candidates[0]?.id ?? null;
   } catch (e) {
     console.error('[ATLAS] autoAssign error:', e.message);
@@ -175,8 +176,8 @@ export async function autoAssign(submitterId) {
 }
 
 // ── Feature 5: Generate resolution report when ticket is closed ────────────────
-export async function generateResolutionReport(ticket, comments, notes) {
-  if (!await isAIEnabled()) return null;
+export async function generateResolutionReport(ticket, comments, notes, companyId = 1) {
+  if (!await isAIEnabled(companyId)) return null;
   try {
     const commentBlock = comments.length
       ? comments.map(c => `[${c.author_name}]: ${c.body}`).join('\n')
@@ -230,8 +231,8 @@ Be technical and direct. 150-220 words total. No filler.`,
 }
 
 // ── Learning: Extract reusable solution pattern from resolved ticket ───────────
-export async function extractLearnedSolution(ticketId, title, description, solution, category) {
-  if (!await isAIEnabled()) return null;
+export async function extractLearnedSolution(ticketId, title, description, solution, category, companyId = 1) {
+  if (!await isAIEnabled(companyId)) return null;
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -264,13 +265,14 @@ Return ONLY the JSON.`,
 
     const { lastInsertRowid } = await db.run(
       `INSERT INTO learned_solutions
-         (category, problem_summary, problem_keywords, solution_text, success_count, tried_count, success_rate, source_ticket_id)
-       VALUES (?, ?, ?, ?, 1, 1, 100, ?)`,
+         (category, problem_summary, problem_keywords, solution_text, success_count, tried_count, success_rate, source_ticket_id, company_id)
+       VALUES (?, ?, ?, ?, 1, 1, 100, ?, ?)`,
       category,
       result.problem_summary,
       JSON.stringify(result.problem_keywords || []),
       result.solution_text,
-      ticketId
+      ticketId,
+      companyId
     );
     console.log('[ATLAS] learned solution stored, id:', lastInsertRowid);
     return lastInsertRowid;
@@ -312,8 +314,8 @@ export async function getTopSolutions(problemText, limit = 5) {
 }
 
 // ── Learning: Generate weekly intelligence report ─────────────────────────────
-export async function generateWeeklyReport(stats) {
-  if (!await isAIEnabled()) return null;
+export async function generateWeeklyReport(stats, companyId = 1) {
+  if (!await isAIEnabled(companyId)) return null;
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -360,8 +362,8 @@ Keep it under 250 words. Make it feel like a real briefing from your AI system, 
 }
 
 // ── Feature 7: Generate knowledge base article from resolved ticket ─────────────
-export async function generateKBArticle(ticket, resolutionReport) {
-  if (!await isAIEnabled()) return null;
+export async function generateKBArticle(ticket, resolutionReport, companyId = 1) {
+  if (!await isAIEnabled(companyId)) return null;
   try {
     const response = await client.messages.create({
       model: 'claude-sonnet-4-20250514',

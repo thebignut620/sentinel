@@ -8,12 +8,15 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // GET /api/ticket-templates — list all templates
 router.get('/', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const templates = await db.all(
       `SELECT t.*, u.name as created_by_name
        FROM ticket_templates t
        LEFT JOIN users u ON u.id = t.created_by
-       ORDER BY t.usage_count DESC, t.created_at DESC`
+       WHERE t.company_id = ?
+       ORDER BY t.usage_count DESC, t.created_at DESC`,
+      companyId
     );
     res.json(templates);
   } catch (err) {
@@ -26,10 +29,11 @@ router.get('/', authenticate, async (req, res) => {
 router.post('/', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { name, category, body } = req.body;
   if (!name || !body) return res.status(400).json({ error: 'name and body required' });
+  const companyId = req.user.company_id || 1;
   try {
     const result = await db.run(
-      `INSERT INTO ticket_templates (name, category, body, created_by) VALUES (?, ?, ?, ?)`,
-      name, category || null, body, req.user.id
+      `INSERT INTO ticket_templates (name, category, body, created_by, company_id) VALUES (?, ?, ?, ?, ?)`,
+      name, category || null, body, req.user.id, companyId
     );
     res.status(201).json({ id: result.lastInsertRowid });
   } catch (err) {
@@ -41,10 +45,11 @@ router.post('/', authenticate, requireRole('it_staff', 'admin'), async (req, res
 // PUT /api/ticket-templates/:id — update template (it_staff+)
 router.put('/:id', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { name, category, body } = req.body;
+  const companyId = req.user.company_id || 1;
   try {
     await db.run(
-      `UPDATE ticket_templates SET name = ?, category = ?, body = ?, updated_at = NOW() WHERE id = ?`,
-      name, category || null, body, req.params.id
+      `UPDATE ticket_templates SET name = ?, category = ?, body = ?, updated_at = NOW() WHERE id = ? AND company_id = ?`,
+      name, category || null, body, req.params.id, companyId
     );
     res.json({ success: true });
   } catch (err) {
@@ -55,8 +60,9 @@ router.put('/:id', authenticate, requireRole('it_staff', 'admin'), async (req, r
 
 // DELETE /api/ticket-templates/:id — delete template (it_staff+)
 router.delete('/:id', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
-    await db.run(`DELETE FROM ticket_templates WHERE id = ?`, req.params.id);
+    await db.run(`DELETE FROM ticket_templates WHERE id = ? AND company_id = ?`, req.params.id, companyId);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -66,10 +72,11 @@ router.delete('/:id', authenticate, requireRole('it_staff', 'admin'), async (req
 
 // POST /api/ticket-templates/:id/use — increment usage count
 router.post('/:id/use', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     await db.run(
-      `UPDATE ticket_templates SET usage_count = usage_count + 1 WHERE id = ?`,
-      req.params.id
+      `UPDATE ticket_templates SET usage_count = usage_count + 1 WHERE id = ? AND company_id = ?`,
+      req.params.id, companyId
     );
     res.json({ success: true });
   } catch (err) {
@@ -81,9 +88,11 @@ router.post('/:id/use', authenticate, async (req, res) => {
 // POST /api/ticket-templates/suggest — ATLAS suggests best template for a ticket
 router.post('/suggest', authenticate, async (req, res) => {
   const { ticketTitle, ticketDescription, category } = req.body;
+  const companyId = req.user.company_id || 1;
   try {
     const templates = await db.all(
-      `SELECT id, name, category, body FROM ticket_templates ORDER BY usage_count DESC LIMIT 20`
+      `SELECT id, name, category, body FROM ticket_templates WHERE company_id = ? ORDER BY usage_count DESC LIMIT 20`,
+      companyId
     );
     if (templates.length === 0) return res.json({ suggestions: [] });
 

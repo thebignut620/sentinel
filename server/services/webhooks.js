@@ -1,11 +1,11 @@
 import crypto from 'crypto';
 import db from '../db/connection.js';
 
-export async function fireWebhooks(event, payload) {
+export async function fireWebhooks(event, payload, companyId = 1) {
   try {
     const hooks = await db.all(
-      "SELECT * FROM webhooks WHERE is_active = 1 AND events LIKE ?",
-      `%${event}%`
+      "SELECT * FROM webhooks WHERE is_active = 1 AND events LIKE ? AND company_id = ?",
+      `%${event}%`, companyId
     );
     for (const hook of hooks) {
       const body = JSON.stringify({

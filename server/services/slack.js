@@ -1,7 +1,7 @@
 import db from '../db/connection.js';
 
-async function getSlackSettings() {
-  const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'slack_%'");
+async function getSlackSettings(companyId = 1) {
+  const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'slack_%' AND company_id = ?", companyId);
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
@@ -11,7 +11,7 @@ const CATEGORY_EMOJI = { hardware: '🖥', software: '💾', network: '🌐', ac
 
 export async function sendNewTicketNotification(ticket) {
   try {
-    const settings = await getSlackSettings();
+    const settings = await getSlackSettings(ticket.company_id || 1);
     if (!settings.slack_webhook_url || settings.slack_enabled !== 'true') return;
 
     const emoji = PRIORITY_EMOJI[ticket.priority] || '⚪';
@@ -71,7 +71,7 @@ export async function sendNewTicketNotification(ticket) {
 
 export async function sendTicketResolvedNotification(ticket) {
   try {
-    const settings = await getSlackSettings();
+    const settings = await getSlackSettings(ticket.company_id || 1);
     if (!settings.slack_webhook_url || settings.slack_enabled !== 'true') return;
 
     const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';

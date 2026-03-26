@@ -45,7 +45,7 @@ function isLocked(email) {
 // ─── JWT helpers ───────────────────────────────────────────────────────────────
 function signAccessToken(user) {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role, name: user.name },
+    { id: user.id, email: user.email, role: user.role, name: user.name, company_id: user.company_id || 1 },
     process.env.JWT_SECRET,
     { expiresIn: '8h' }
   );
@@ -126,7 +126,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   res.json({
     token,
     refreshToken,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, role: user.role, company_id: user.company_id || 1 },
   });
 });
 
@@ -136,7 +136,7 @@ router.post('/refresh', async (req, res) => {
   if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
 
   const row = await db.get(
-    `SELECT rt.*, u.id as uid, u.email, u.role, u.name, u.is_active
+    `SELECT rt.*, u.id as uid, u.email, u.role, u.name, u.is_active, u.company_id
      FROM refresh_tokens rt
      JOIN users u ON rt.user_id = u.id
      WHERE rt.token = ? AND rt.revoked = 0 AND rt.expires_at > NOW()`,
@@ -147,14 +147,14 @@ router.post('/refresh', async (req, res) => {
     return res.status(401).json({ error: 'Invalid or expired refresh token' });
   }
 
-  const token = signAccessToken({ id: row.uid, email: row.email, role: row.role, name: row.name });
+  const token = signAccessToken({ id: row.uid, email: row.email, role: row.role, name: row.name, company_id: row.company_id || 1 });
   res.json({ token });
 });
 
 // ─── GET /me ───────────────────────────────────────────────────────────────────
 router.get('/me', authenticate, async (req, res) => {
   const user = await db.get(
-    'SELECT id, name, email, role, created_at FROM users WHERE id = ?',
+    'SELECT id, name, email, role, company_id, created_at FROM users WHERE id = ?',
     req.user.id
   );
   if (!user) return res.status(404).json({ error: 'User not found' });
@@ -184,7 +184,7 @@ router.post('/forgot-password', forgotPasswordLimiter, async (req, res) => {
 
   console.log('[forgot-password] reset token created, attempting to send email to:', user.email);
   try {
-    await sendPasswordResetEmail({ to: user.email, name: user.name, token });
+    await sendPasswordResetEmail({ to: user.email, name: user.name, token, companyId: user.company_id || 1 });
     console.log('[forgot-password] email sent successfully to:', user.email);
   } catch (err) {
     console.error('[forgot-password] failed to send reset email:', err.message, err.stack);
@@ -246,33 +246,97 @@ router.post('/signup', signupLimiter, async (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const trialEnd = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
-    const result = await db.run(
-      `INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, 'admin', 1)`,
-      adminName.trim(), email.toLowerCase().trim(), hash
-    );
-    const userId = result.lastInsertRowid;
+    // Create slug from company name
+    const slug = companyName.trim().toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    const uniqueSlug = slug + '-' + Date.now();
 
+    // Create company
+    const companyResult = await db.run(
+      `INSERT INTO companies (name, slug) VALUES (?, ?) RETURNING id`,
+      companyName.trim(), uniqueSlug
+    );
+    const companyId = companyResult.lastInsertRowid;
+
+    // Create admin user
+    const userResult = await db.run(
+      `INSERT INTO users (name, email, password, role, is_active, company_id) VALUES (?, ?, ?, 'admin', 1, ?)`,
+      adminName.trim(), email.toLowerCase().trim(), hash, companyId
+    );
+    const userId = userResult.lastInsertRowid;
+
+    // Seed company-specific settings
     const seeds = [
-      ['company_name',        companyName.trim()],
-      ['subscription_plan',   'trial'],
+      ['company_name', companyName.trim()],
+      ['subscription_plan', 'trial'],
       ['subscription_status', 'trialing'],
-      ['trial_ends_at',       trialEnd],
+      ['trial_ends_at', trialEnd],
+      ['ai_enabled', 'true'],
+      ['smtp_host', ''],
+      ['smtp_port', '587'],
+      ['smtp_user', ''],
+      ['smtp_pass', ''],
+      ['smtp_from', ''],
+      ['smtp_secure', 'false'],
+      ['slack_webhook_url', ''],
+      ['slack_channel', ''],
+      ['slack_enabled', 'false'],
+      ['email_ingestion_enabled', 'false'],
+      ['imap_host', ''],
+      ['imap_user', ''],
+      ['imap_pass', ''],
+      ['imap_port', '993'],
+      ['pagerduty_routing_key', ''],
+      ['pagerduty_enabled', 'false'],
+      ['jira_host', ''],
+      ['jira_email', ''],
+      ['jira_token', ''],
+      ['jira_project', ''],
+      ['jira_enabled', 'false'],
+      ['atlas_custom_instructions', ''],
+      ['weekly_briefing_enabled', 'true'],
+      ['health_score_alert_threshold', '70'],
     ];
     for (const [key, value] of seeds) {
       await db.run(
-        `INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-        key, value
+        `INSERT INTO settings (company_id, key, value) VALUES (?, ?, ?) ON CONFLICT (company_id, key) DO UPDATE SET value = EXCLUDED.value`,
+        companyId, key, value
       );
     }
 
+    // Send welcome email
     try {
       await sendWelcomeEmail({ to: email.toLowerCase(), name: adminName.trim(), companyName: companyName.trim(), trialEnd });
     } catch (e) {
       console.error('[signup] welcome email failed:', e.message);
     }
 
+    // Notify Sentinel admin of new signup
+    setImmediate(async () => {
+      try {
+        const nodemailer = await import('nodemailer');
+        if (process.env.NOTIFY_EMAIL && process.env.NOTIFY_SMTP_HOST) {
+          const notifyTransport = nodemailer.default.createTransport({
+            host: process.env.NOTIFY_SMTP_HOST,
+            port: parseInt(process.env.NOTIFY_SMTP_PORT || '587'),
+            secure: process.env.NOTIFY_SMTP_SECURE === 'true',
+            auth: { user: process.env.NOTIFY_SMTP_USER, pass: process.env.NOTIFY_SMTP_PASS },
+          });
+          await notifyTransport.sendMail({
+            from: process.env.NOTIFY_SMTP_USER,
+            to: 'iguinn141@gmail.com',
+            subject: `New Sentinel signup: ${companyName.trim()}`,
+            html: `<p>New company signup:</p><ul><li><strong>Company:</strong> ${companyName.trim()}</li><li><strong>Admin:</strong> ${adminName.trim()}</li><li><strong>Email:</strong> ${email.toLowerCase().trim()}</li><li><strong>Signed up:</strong> ${new Date().toISOString()}</li></ul>`,
+          });
+        } else {
+          console.log(`[signup] NEW COMPANY: ${companyName.trim()} | Admin: ${adminName.trim()} | Email: ${email.toLowerCase().trim()}`);
+        }
+      } catch(e) {
+        console.error('[signup] notification email error:', e.message);
+      }
+    });
+
     const token = jwt.sign(
-      { id: userId, email: email.toLowerCase().trim(), role: 'admin', name: adminName.trim() },
+      { id: userId, email: email.toLowerCase().trim(), role: 'admin', name: adminName.trim(), company_id: companyId },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
     );
@@ -281,7 +345,7 @@ router.post('/signup', signupLimiter, async (req, res) => {
     res.status(201).json({
       token,
       refreshToken,
-      user: { id: userId, name: adminName.trim(), email: email.toLowerCase().trim(), role: 'admin' },
+      user: { id: userId, name: adminName.trim(), email: email.toLowerCase().trim(), role: 'admin', company_id: companyId },
     });
   } catch (err) {
     console.error('[signup] error:', err.message);

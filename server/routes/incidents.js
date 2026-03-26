@@ -6,13 +6,16 @@ const router = express.Router();
 
 // GET /api/incidents — list active incidents (all authenticated users see these)
 router.get('/', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const incidents = await db.all(
       `SELECT i.*, u.name as resolved_by_name
        FROM incidents i
        LEFT JOIN users u ON u.id = i.resolved_by
+       WHERE i.company_id = ?
        ORDER BY i.created_at DESC
-       LIMIT 50`
+       LIMIT 50`,
+      companyId
     );
     res.json(incidents);
   } catch (err) {
@@ -23,9 +26,11 @@ router.get('/', authenticate, async (req, res) => {
 
 // GET /api/incidents/active — just active incidents for the banner
 router.get('/active', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const incidents = await db.all(
-      `SELECT * FROM incidents WHERE status = 'active' ORDER BY created_at DESC`
+      `SELECT * FROM incidents WHERE status = 'active' AND company_id = ? ORDER BY created_at DESC`,
+      companyId
     );
     res.json(incidents);
   } catch (err) {
@@ -37,8 +42,9 @@ router.get('/active', authenticate, async (req, res) => {
 // POST /api/incidents/:id/resolve — resolve an incident (it_staff+)
 router.post('/:id/resolve', authenticate, requireRole(['it_staff', 'admin']), async (req, res) => {
   const { id } = req.params;
+  const companyId = req.user.company_id || 1;
   try {
-    const incident = await db.get('SELECT * FROM incidents WHERE id = ?', id);
+    const incident = await db.get('SELECT * FROM incidents WHERE id = ? AND company_id = ?', id, companyId);
     if (!incident) return res.status(404).json({ error: 'Incident not found' });
 
     await db.run(
@@ -58,10 +64,11 @@ router.post('/', authenticate, requireRole(['it_staff', 'admin']), async (req, r
   if (!title || !description || !category) {
     return res.status(400).json({ error: 'title, description, and category required' });
   }
+  const companyId = req.user.company_id || 1;
   try {
     const result = await db.run(
-      `INSERT INTO incidents (title, description, category) VALUES (?, ?, ?)`,
-      title, description, category
+      `INSERT INTO incidents (title, description, category, company_id) VALUES (?, ?, ?, ?)`,
+      title, description, category, companyId
     );
     res.status(201).json({ id: result.lastID || result.id });
   } catch (err) {

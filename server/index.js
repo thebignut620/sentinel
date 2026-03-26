@@ -38,6 +38,11 @@ import ticketTemplateRoutes from './routes/ticket-templates.js';
 import clusterRoutes from './routes/clusters.js';
 import billingRoutes from './routes/billing.js';
 import statusRoutes from './routes/status.js';
+import chatRoutes from './routes/chat.js';
+import automationRoutes from './routes/automations.js';
+import sandboxRoutes from './routes/sandbox.js';
+import timeTrackingRoutes from './routes/time-tracking.js';
+import ticketRelationsRoutes from './routes/ticket-relations.js';
 import { authenticate } from './middleware/auth.js';
 import { sanitizeBody } from './middleware/sanitize.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
@@ -96,6 +101,8 @@ app.get('/api/ping', (_req, res) => res.json({ ok: true, t: Date.now() }));
 app.use('/api/auth', authRoutes);
 app.use('/api/sso', ssoRoutes);
 app.use('/api/status', statusRoutes);
+// Public KB endpoints — no auth required
+app.use('/api/knowledge-base', kbRoutes);
 
 // ─── Protected routes ──────────────────────────────────────────────────────────
 app.use('/api/ai', authenticate, aiRoutes);
@@ -103,7 +110,6 @@ app.use('/api/tickets', authenticate, ticketRoutes);
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/settings', authenticate, settingsRoutes);
 app.use('/api/dashboard', authenticate, dashboardRoutes);
-app.use('/api/knowledge-base', authenticate, kbRoutes);
 app.use('/api/company-profile', companyProfileRoutes);
 app.use('/api/employee-profiles', authenticate, employeeProfileRoutes);
 app.use('/api/integrations', integrationRoutes);
@@ -136,6 +142,13 @@ app.use('/api/incidents', incidentRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
 app.use('/api/ticket-templates', ticketTemplateRoutes);
 app.use('/api/clusters', authenticate, clusterRoutes);
+
+// Phase 7 routes
+app.use('/api/chat', authenticate, chatRoutes);
+app.use('/api/automations', authenticate, automationRoutes);
+app.use('/api/sandbox', authenticate, sandboxRoutes);
+app.use('/api', authenticate, timeTrackingRoutes);
+app.use('/api', authenticate, ticketRelationsRoutes);
 
 // ─── Global error handler — never expose internals ────────────────────────────
 app.use((err, req, res, _next) => {

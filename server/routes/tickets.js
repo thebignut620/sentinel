@@ -30,6 +30,7 @@ async function logHistory(ticketId, userId, action, fromVal, toVal) {
 // List tickets
 router.get('/', authenticate, async (req, res) => {
   const { status, priority, category, search, assignee } = req.query;
+  const companyId = req.user.company_id || 1;
   let query, params;
 
   if (req.user.role === 'employee') {
@@ -38,20 +39,20 @@ router.get('/', authenticate, async (req, res) => {
       FROM tickets t
       JOIN users u ON t.submitter_id = u.id
       LEFT JOIN users a ON t.assignee_id = a.id
-      WHERE t.submitter_id = ?
+      WHERE t.submitter_id = ? AND t.company_id = ?
     `;
-    params = [req.user.id];
+    params = [req.user.id, companyId];
   } else {
     query = `
       SELECT t.*, u.name as submitter_name, a.name as assignee_name,
         (SELECT COUNT(*) FROM tickets t2
-         WHERE t2.submitter_id = t.submitter_id AND t2.category = t.category) as category_ticket_count
+         WHERE t2.submitter_id = t.submitter_id AND t2.category = t.category AND t2.company_id = t.company_id) as category_ticket_count
       FROM tickets t
       JOIN users u ON t.submitter_id = u.id
       LEFT JOIN users a ON t.assignee_id = a.id
-      WHERE 1=1
+      WHERE t.company_id = ?
     `;
-    params = [];
+    params = [companyId];
   }
 
   if (status)   { query += ' AND t.status = ?';   params.push(status); }
@@ -71,7 +72,8 @@ router.get('/', authenticate, async (req, res) => {
 
 // Get ticket history
 router.get('/:id/history', authenticate, async (req, res) => {
-  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
   if (req.user.role === 'employee' && ticket.submitter_id !== req.user.id) {
     return res.status(403).json({ error: 'Access denied' });
@@ -90,30 +92,32 @@ router.get('/:id/history', authenticate, async (req, res) => {
 
 // Get related tickets (same category, different id)
 router.get('/:id/related', authenticate, async (req, res) => {
-  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
   const related = await db.all(`
     SELECT t.id, t.title, t.status, t.priority, t.category, t.created_at, u.name as submitter_name
     FROM tickets t
     JOIN users u ON t.submitter_id = u.id
-    WHERE t.category = ? AND t.id != ?
+    WHERE t.category = ? AND t.id != ? AND t.company_id = ?
     ORDER BY t.created_at DESC
     LIMIT 4
-  `, ticket.category, ticket.id);
+  `, ticket.category, ticket.id, companyId);
 
   res.json(related);
 });
 
 // Get single ticket with comments, notes, attachments
 router.get('/:id', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   const ticket = await db.get(`
     SELECT t.*, u.name as submitter_name, u.email as submitter_email, a.name as assignee_name
     FROM tickets t
     JOIN users u ON t.submitter_id = u.id
     LEFT JOIN users a ON t.assignee_id = a.id
-    WHERE t.id = ?
-  `, req.params.id);
+    WHERE t.id = ? AND t.company_id = ?
+  `, req.params.id, companyId);
 
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
@@ -172,10 +176,12 @@ router.post('/', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Title and description are required' });
   }
 
+  const companyId = req.user.company_id || 1;
+
   // ── ATLAS: auto-categorize, auto-prioritize, sentiment detection (features 1–3)
   const [analysis, assigneeId] = await Promise.all([
-    atlas.analyzeTicket(title.trim(), description.trim()),
-    atlas.autoAssign(req.user.id),  // feature 6: auto-assign
+    atlas.analyzeTicket(title.trim(), description.trim(), companyId),
+    atlas.autoAssign(req.user.id, companyId),  // feature 6: auto-assign
   ]);
 
   const finalCategory  = analysis?.category  ?? clientCategory;
@@ -188,15 +194,16 @@ router.post('/', authenticate, async (req, res) => {
   const result = await db.run(`
     INSERT INTO tickets
       (title, description, priority, category, submitter_id, assignee_id,
-       ai_attempted, ai_suggestion, sentiment, ai_auto_assigned, sla_due_at, custom_fields)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ai_attempted, ai_suggestion, sentiment, ai_auto_assigned, sla_due_at, custom_fields, company_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
     title.trim(), description.trim(),
     finalPriority, finalCategory,
     req.user.id, finalAssignee,
     ai_attempted ? 1 : 0, ai_suggestion,
     finalSentiment, finalAssignee ? 1 : 0,
-    slaDueAt, customFields ? JSON.stringify(customFields) : null
+    slaDueAt, customFields ? JSON.stringify(customFields) : null,
+    companyId
   );
 
   const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', result.lastID ?? result.lastInsertRowid);
@@ -211,7 +218,7 @@ router.post('/', authenticate, async (req, res) => {
   // ── ATLAS: find similar tickets async (feature 4) — don't block response
   setImmediate(async () => {
     try {
-      const similar = await atlas.findSimilarTickets(ticket.id, title.trim(), description.trim());
+      const similar = await atlas.findSimilarTickets(ticket.id, title.trim(), description.trim(), companyId);
       if (similar.length > 0) {
         await db.run(
           'UPDATE tickets SET atlas_suggestions = ? WHERE id = ?',
@@ -283,7 +290,7 @@ router.post('/', authenticate, async (req, res) => {
   setImmediate(async () => {
     try {
       const ticketWithUser = { ...ticket, submitter_name: req.user.name };
-      await fireWebhooks('ticket.created', ticketWithUser);
+      await fireWebhooks('ticket.created', ticketWithUser, companyId);
       await sendNewTicketNotification(ticketWithUser);
     } catch (e) {
       console.error('[Phase4] create notifications error:', e.message);
@@ -296,6 +303,7 @@ router.post('/', authenticate, async (req, res) => {
 // Bulk update tickets (staff/admin only)
 router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { ids, status, assignee_id, priority } = req.body;
+  const companyId = req.user.company_id || 1;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: 'ids array required' });
   }
@@ -304,7 +312,7 @@ router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req
   }
 
   for (const id of ids) {
-    const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', id);
+    const ticket = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', id, companyId);
     if (!ticket) continue;
 
     const fields = ['updated_at = NOW()'];
@@ -347,7 +355,8 @@ router.patch('/bulk', authenticate, requireRole('it_staff', 'admin'), async (req
 
 // Update ticket (staff/admin only)
 router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
-  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
   const { status, priority, category, assignee_id, solution } = req.body;
@@ -400,7 +409,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
   if (status && status !== ticket.status) {
     const submitter = await db.get('SELECT name, email FROM users WHERE id = ?', ticket.submitter_id);
     if (submitter) {
-      sendTicketStatusEmail({ to: submitter.email, name: submitter.name, ticketId: ticket.id, title: ticket.title, newStatus: status });
+      sendTicketStatusEmail({ to: submitter.email, name: submitter.name, ticketId: ticket.id, title: ticket.title, newStatus: status, companyId });
 
       // Send satisfaction survey when ticket is resolved (first time only)
       if (status === 'resolved' && ticket.status !== 'resolved') {
@@ -417,6 +426,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
               ticketId: ticket.id,
               ticketTitle: ticket.title,
               token,
+              companyId,
             });
           } catch (e) {
             console.error('[satisfaction] failed to send survey:', e.message);
@@ -434,7 +444,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
       try {
         await atlas.extractLearnedSolution(
           ticket.id, ticket.title, ticket.description,
-          solutionToLearn, updated.category || ticket.category
+          solutionToLearn, updated.category || ticket.category, companyId
         );
       } catch (e) {
         console.error('[ATLAS] learning extraction error:', e.message);
@@ -457,7 +467,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
         ]);
 
         // Feature 5: resolution report
-        const report = await atlas.generateResolutionReport(freshTicket, comments, notes);
+        const report = await atlas.generateResolutionReport(freshTicket, comments, notes, companyId);
         if (report) {
           await db.run('UPDATE tickets SET resolution_report = ? WHERE id = ?', report, req.params.id);
         }
@@ -465,18 +475,19 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
         // Feature 7: KB article
         const existing = await db.get('SELECT id FROM knowledge_base WHERE ticket_id = ?', req.params.id);
         if (!existing) {
-          const article = await atlas.generateKBArticle(freshTicket, report);
+          const article = await atlas.generateKBArticle(freshTicket, report, companyId);
           if (article) {
             await db.run(`
-              INSERT INTO knowledge_base (title, category, problem, solution, steps, ticket_id)
-              VALUES (?, ?, ?, ?, ?, ?)
+              INSERT INTO knowledge_base (title, category, problem, solution, steps, ticket_id, company_id)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
             `,
               article.title,
               freshTicket.category,
               article.problem,
               article.solution,
               JSON.stringify(article.steps || []),
-              req.params.id
+              req.params.id,
+              freshTicket.company_id || 1
             );
           }
         }
@@ -494,7 +505,7 @@ router.patch('/:id', authenticate, requireRole('it_staff', 'admin'), async (req,
       const webhookEvent = isResolved ? 'ticket.resolved'
                          : isClosed   ? 'ticket.closed'
                          : 'ticket.updated';
-      await fireWebhooks(webhookEvent, updated);
+      await fireWebhooks(webhookEvent, updated, updated.company_id || 1);
       if (isResolved) await sendTicketResolvedNotification(updated);
     } catch (e) {
       console.error('[Phase4] update notifications error:', e.message);
@@ -509,7 +520,8 @@ router.post('/:id/comments', authenticate, async (req, res) => {
   const { body } = req.body;
   if (!body?.trim()) return res.status(400).json({ error: 'Comment body required' });
 
-  const ticket = await db.get('SELECT * FROM tickets WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const ticket = await db.get('SELECT * FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
   if (req.user.role === 'employee' && ticket.submitter_id !== req.user.id) {
@@ -538,7 +550,8 @@ router.post('/:id/notes', authenticate, requireRole('it_staff', 'admin'), async 
   const { body } = req.body;
   if (!body?.trim()) return res.status(400).json({ error: 'Note body required' });
 
-  const ticket = await db.get('SELECT id FROM tickets WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const ticket = await db.get('SELECT id FROM tickets WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
 
   const result = await db.run(

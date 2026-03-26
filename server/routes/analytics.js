@@ -10,25 +10,29 @@ import { authenticate, requireRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// ─── REAL-TIME STATS (no auth — polled every 30s from dashboard) ─────────────
+// ─── REAL-TIME STATS ─────────────────────────────────────────────────────────
 router.get('/realtime', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const [open, inProgress, resolvedToday, avgRes, total, atlasHandled, ticketsThisHour] =
       await Promise.all([
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'open'`),
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'in_progress'`),
-        db.get(`SELECT COUNT(*) as count FROM tickets WHERE resolved_at::date = CURRENT_DATE`),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'open' AND company_id = ?`, companyId),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE status = 'in_progress' AND company_id = ?`, companyId),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE resolved_at::date = CURRENT_DATE AND company_id = ?`, companyId),
         db.get(
           `SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours
-           FROM tickets WHERE resolved_at IS NOT NULL`
+           FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ?`,
+          companyId
         ),
-        db.get(`SELECT COUNT(*) as count FROM tickets`),
+        db.get(`SELECT COUNT(*) as count FROM tickets WHERE company_id = ?`, companyId),
         db.get(
-          `SELECT COUNT(*) as count FROM tickets WHERE ai_auto_assigned = 1 OR ai_attempted = 1`
+          `SELECT COUNT(*) as count FROM tickets WHERE (ai_auto_assigned = 1 OR ai_attempted = 1) AND company_id = ?`,
+          companyId
         ),
         db.get(
           `SELECT COUNT(*) as count FROM tickets
-           WHERE created_at >= NOW() - INTERVAL '1 hour'`
+           WHERE created_at >= NOW() - INTERVAL '1 hour' AND company_id = ?`,
+          companyId
         ),
       ]);
 
@@ -51,6 +55,7 @@ router.get('/realtime', authenticate, async (req, res) => {
 
 // ─── STAFF PERFORMANCE LEADERBOARD ──────────────────────────────────────────
 router.get('/staff-performance', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const staff = await db.all(`
       SELECT
@@ -63,11 +68,11 @@ router.get('/staff-performance', authenticate, async (req, res) => {
         COUNT(t.id) FILTER (WHERE t.status IN ('resolved','closed')) as total_closed,
         COUNT(t.id) as total_assigned
       FROM users u
-      LEFT JOIN tickets t ON t.assignee_id = u.id
-      WHERE u.role IN ('it_staff', 'admin') AND u.is_active = 1
+      LEFT JOIN tickets t ON t.assignee_id = u.id AND t.company_id = ?
+      WHERE u.role IN ('it_staff', 'admin') AND u.is_active = 1 AND u.company_id = ?
       GROUP BY u.id, u.name
       ORDER BY resolved_count DESC
-    `);
+    `, companyId, companyId);
 
     const satisfaction = await db.all(`
       SELECT t.assignee_id,
@@ -75,9 +80,9 @@ router.get('/staff-performance', authenticate, async (req, res) => {
         COUNT(*) FILTER (WHERE sr.rating = 'up') as thumbs_up
       FROM satisfaction_ratings sr
       JOIN tickets t ON sr.ticket_id = t.id
-      WHERE sr.rating IS NOT NULL AND t.assignee_id IS NOT NULL
+      WHERE sr.rating IS NOT NULL AND t.assignee_id IS NOT NULL AND t.company_id = ?
       GROUP BY t.assignee_id
-    `);
+    `, companyId);
 
     const satMap = Object.fromEntries(satisfaction.map(s => [s.assignee_id, s]));
 
@@ -114,6 +119,7 @@ router.get('/staff-performance', authenticate, async (req, res) => {
 
 // ─── RESOLUTION TIME BREAKDOWN ───────────────────────────────────────────────
 router.get('/resolution-time', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const [byCategory, byPriority, byStaff] = await Promise.all([
       db.all(`
@@ -122,30 +128,30 @@ router.get('/resolution-time', authenticate, async (req, res) => {
           AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours,
           MIN(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as min_hours,
           MAX(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as max_hours
-        FROM tickets WHERE resolved_at IS NOT NULL
+        FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ?
         GROUP BY category ORDER BY avg_hours DESC
-      `),
+      `, companyId),
       db.all(`
         SELECT priority,
           COUNT(*) as count,
           AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours
-        FROM tickets WHERE resolved_at IS NOT NULL
+        FROM tickets WHERE resolved_at IS NOT NULL AND company_id = ?
         GROUP BY priority
         ORDER BY CASE priority
           WHEN 'critical' THEN 1 WHEN 'high' THEN 2
           WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END
-      `),
+      `, companyId),
       db.all(`
         SELECT u.name as staff_name,
           COUNT(*) as count,
           AVG(EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)) / 3600) as avg_hours
         FROM tickets t
         JOIN users u ON t.assignee_id = u.id
-        WHERE t.resolved_at IS NOT NULL AND u.role IN ('it_staff', 'admin')
+        WHERE t.resolved_at IS NOT NULL AND u.role IN ('it_staff', 'admin') AND t.company_id = ?
         GROUP BY u.id, u.name
         ORDER BY avg_hours ASC
         LIMIT 10
-      `),
+      `, companyId),
     ]);
 
     const fmt = rows =>
@@ -168,6 +174,7 @@ router.get('/resolution-time', authenticate, async (req, res) => {
 
 // ─── PEAK HOURS HEATMAP ──────────────────────────────────────────────────────
 router.get('/peak-hours', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const rows = await db.all(`
       SELECT
@@ -175,8 +182,9 @@ router.get('/peak-hours', authenticate, async (req, res) => {
         EXTRACT(HOUR FROM created_at)::integer as hour,
         COUNT(*) as count
       FROM tickets
+      WHERE company_id = ?
       GROUP BY dow, hour
-    `);
+    `, companyId);
 
     // Build 7x24 matrix (dow 0=Sun..6=Sat, hour 0..23)
     const matrix = Array.from({ length: 7 }, () => new Array(24).fill(0));
@@ -198,6 +206,7 @@ router.get('/peak-hours', authenticate, async (req, res) => {
 
 // ─── TICKET VOLUME ───────────────────────────────────────────────────────────
 router.get('/volume', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const { period = 'day' } = req.query;
     let query;
@@ -208,7 +217,7 @@ router.get('/volume', authenticate, async (req, res) => {
                DATE_TRUNC('month', created_at) as sort_key,
                COUNT(*) as count
         FROM tickets
-        WHERE created_at >= NOW() - INTERVAL '12 months'
+        WHERE created_at >= NOW() - INTERVAL '12 months' AND company_id = ${companyId}
         GROUP BY DATE_TRUNC('month', created_at)
         ORDER BY sort_key ASC
       `;
@@ -218,7 +227,7 @@ router.get('/volume', authenticate, async (req, res) => {
                DATE_TRUNC('week', created_at) as sort_key,
                COUNT(*) as count
         FROM tickets
-        WHERE created_at >= NOW() - INTERVAL '12 weeks'
+        WHERE created_at >= NOW() - INTERVAL '12 weeks' AND company_id = ${companyId}
         GROUP BY DATE_TRUNC('week', created_at)
         ORDER BY sort_key ASC
       `;
@@ -228,7 +237,7 @@ router.get('/volume', authenticate, async (req, res) => {
                DATE(created_at) as sort_key,
                COUNT(*) as count
         FROM tickets
-        WHERE created_at >= CURRENT_DATE - INTERVAL '29 days'
+        WHERE created_at >= CURRENT_DATE - INTERVAL '29 days' AND company_id = ${companyId}
         GROUP BY DATE(created_at)
         ORDER BY sort_key ASC
       `;
@@ -243,6 +252,7 @@ router.get('/volume', authenticate, async (req, res) => {
 
 // ─── COMMON ISSUES (top categories + keywords) ───────────────────────────────
 router.get('/common-issues', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const byCategory = await db.all(`
       SELECT
@@ -251,12 +261,14 @@ router.get('/common-issues', authenticate, async (req, res) => {
         COUNT(*) FILTER (WHERE ai_attempted = 1 AND status IN ('resolved','closed')) as atlas_resolved,
         COUNT(*) FILTER (WHERE status IN ('resolved','closed')) as resolved
       FROM tickets
+      WHERE company_id = ?
       GROUP BY category
       ORDER BY total DESC
-    `);
+    `, companyId);
 
     const titles = await db.all(
-      `SELECT title FROM tickets ORDER BY created_at DESC LIMIT 500`
+      `SELECT title FROM tickets WHERE company_id = ? ORDER BY created_at DESC LIMIT 500`,
+      companyId
     );
 
     const stopWords = new Set([
@@ -299,6 +311,7 @@ router.get('/common-issues', authenticate, async (req, res) => {
 
 // ─── COST SAVINGS CALCULATOR ─────────────────────────────────────────────────
 router.get('/cost-savings', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const {
       costPerTicket = 25,
@@ -313,7 +326,8 @@ router.get('/cost-savings', authenticate, async (req, res) => {
           COUNT(*) FILTER (WHERE ai_auto_assigned = 1 OR ai_attempted = 1) as atlas_handled,
           COUNT(*) FILTER (WHERE ai_auto_assigned = 1) as fully_automated
         FROM tickets
-      `),
+        WHERE company_id = ?
+      `, companyId),
       db.all(`
         SELECT
           TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as month,
@@ -321,10 +335,10 @@ router.get('/cost-savings', authenticate, async (req, res) => {
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE ai_auto_assigned = 1 OR ai_attempted = 1) as atlas_handled
         FROM tickets
-        WHERE created_at >= NOW() - INTERVAL '6 months'
+        WHERE created_at >= NOW() - INTERVAL '6 months' AND company_id = ?
         GROUP BY DATE_TRUNC('month', created_at)
         ORDER BY sort_key ASC
-      `),
+      `, companyId),
     ]);
 
     const savings =
@@ -355,6 +369,7 @@ router.get('/cost-savings', authenticate, async (req, res) => {
 
 // ─── SATISFACTION OVERVIEW ────────────────────────────────────────────────────
 router.get('/satisfaction', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const [overview, byStaff, recent] = await Promise.all([
       db.get(`
@@ -363,8 +378,10 @@ router.get('/satisfaction', authenticate, async (req, res) => {
           COUNT(*) FILTER (WHERE rating IS NOT NULL) as total_rated,
           COUNT(*) FILTER (WHERE rating = 'up') as thumbs_up,
           COUNT(*) FILTER (WHERE rating = 'down') as thumbs_down
-        FROM satisfaction_ratings
-      `),
+        FROM satisfaction_ratings sr
+        JOIN tickets t ON sr.ticket_id = t.id
+        WHERE t.company_id = ?
+      `, companyId),
       db.all(`
         SELECT u.name as staff_name,
           COUNT(sr.id) as total_rated,
@@ -372,21 +389,21 @@ router.get('/satisfaction', authenticate, async (req, res) => {
         FROM satisfaction_ratings sr
         JOIN tickets t ON sr.ticket_id = t.id
         JOIN users u ON t.assignee_id = u.id
-        WHERE sr.rating IS NOT NULL
+        WHERE sr.rating IS NOT NULL AND t.company_id = ?
         GROUP BY u.id, u.name
         ORDER BY thumbs_up DESC
         LIMIT 10
-      `),
+      `, companyId),
       db.all(`
         SELECT sr.rating, sr.comment, sr.submitted_at,
                t.title as ticket_title, u.name as staff_name
         FROM satisfaction_ratings sr
         JOIN tickets t ON sr.ticket_id = t.id
         LEFT JOIN users u ON t.assignee_id = u.id
-        WHERE sr.rating IS NOT NULL
+        WHERE sr.rating IS NOT NULL AND t.company_id = ?
         ORDER BY sr.submitted_at DESC
         LIMIT 20
-      `),
+      `, companyId),
     ]);
 
     res.json({
@@ -429,24 +446,44 @@ router.get('/satisfaction/:token', async (req, res) => {
 // ─── SUBMIT SATISFACTION (public — by token) ─────────────────────────────────
 router.post('/satisfaction/:token', async (req, res) => {
   try {
-    const { rating, comment } = req.body;
-    if (!['up', 'down'].includes(rating)) {
-      return res.status(400).json({ error: 'Rating must be "up" or "down"' });
-    }
+    const { rating, comment, star_rating, speed_rating, quality_rating, communication_rating, atlas_rating, nps_score } = req.body;
 
-    const row = await db.get(
-      'SELECT * FROM satisfaction_ratings WHERE token = ?',
-      req.params.token
-    );
+    const row = await db.get('SELECT * FROM satisfaction_ratings WHERE token = ?', req.params.token);
     if (!row) return res.status(404).json({ error: 'Invalid or expired survey link' });
-    if (row.rating) return res.status(409).json({ error: 'Survey already completed' });
+    if (row.rating || row.star_rating) return res.status(409).json({ error: 'Survey already completed' });
 
-    await db.run(
-      'UPDATE satisfaction_ratings SET rating = ?, comment = ?, submitted_at = NOW() WHERE token = ?',
-      rating,
-      comment || null,
-      req.params.token
-    );
+    // Derive up/down from star rating if provided
+    const derivedRating = star_rating ? (star_rating >= 4 ? 'up' : 'down') : rating;
+
+    if (!derivedRating && !star_rating) return res.status(400).json({ error: 'Rating required' });
+
+    await db.run(`
+      UPDATE satisfaction_ratings SET
+        rating = ?, comment = ?, submitted_at = NOW(),
+        star_rating = ?, speed_rating = ?, quality_rating = ?,
+        communication_rating = ?, atlas_rating = ?, nps_score = ?
+      WHERE token = ?
+    `, derivedRating || null, comment || null,
+       star_rating || null, speed_rating || null, quality_rating || null,
+       communication_rating || null, atlas_rating || null, nps_score || null,
+       req.params.token);
+
+    // If 3 stars or below, add follow-up task
+    if (star_rating && star_rating <= 3) {
+      const ratingRow = await db.get(`
+        SELECT sr.ticket_id, t.company_id, t.assignee_id
+        FROM satisfaction_ratings sr JOIN tickets t ON sr.ticket_id = t.id
+        WHERE sr.token = ?
+      `, req.params.token);
+      if (ratingRow) {
+        await db.run(`
+          INSERT INTO ticket_notes (ticket_id, user_id, body)
+          VALUES (?, ?, ?)
+        `, ratingRow.ticket_id, ratingRow.assignee_id || 1,
+           `Low satisfaction rating received (${star_rating}/5). Follow up with employee required.`
+        ).catch(() => {});
+      }
+    }
 
     res.json({ success: true });
   } catch (e) {
@@ -456,11 +493,12 @@ router.post('/satisfaction/:token', async (req, res) => {
 
 // ─── CUSTOM REPORT EXPORT (CSV or PDF) ───────────────────────────────────────
 router.post('/reports/export', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const { format = 'csv', dateFrom, dateTo } = req.body;
 
-    const whereClauses = ['1=1'];
-    const params = [];
+    const whereClauses = ['t.company_id = ?'];
+    const params = [companyId];
     if (dateFrom) {
       whereClauses.push('t.created_at >= ?');
       params.push(dateFrom);
@@ -525,9 +563,11 @@ router.post('/reports/export', authenticate, async (req, res) => {
 
 // ─── LIST MONTHLY REPORTS ────────────────────────────────────────────────────
 router.get('/reports/monthly', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const reports = await db.all(
-      'SELECT id, report_month, stats, generated_at FROM monthly_reports ORDER BY generated_at DESC LIMIT 24'
+      'SELECT id, report_month, stats, generated_at FROM monthly_reports WHERE company_id = ? ORDER BY generated_at DESC LIMIT 24',
+      companyId
     );
     res.json(
       reports.map(r => ({ ...r, stats: r.stats ? JSON.parse(r.stats) : null }))
@@ -539,10 +579,11 @@ router.get('/reports/monthly', authenticate, async (req, res) => {
 
 // ─── GET SINGLE MONTHLY REPORT ───────────────────────────────────────────────
 router.get('/reports/monthly/:id', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const report = await db.get(
-      'SELECT * FROM monthly_reports WHERE id = ?',
-      req.params.id
+      'SELECT * FROM monthly_reports WHERE id = ? AND company_id = ?',
+      req.params.id, companyId
     );
     if (!report) return res.status(404).json({ error: 'Report not found' });
     res.json({ ...report, stats: report.stats ? JSON.parse(report.stats) : null });
@@ -553,10 +594,11 @@ router.get('/reports/monthly/:id', authenticate, async (req, res) => {
 
 // ─── DOWNLOAD MONTHLY REPORT PDF ─────────────────────────────────────────────
 router.get('/reports/monthly/:id/pdf', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const report = await db.get(
-      'SELECT * FROM monthly_reports WHERE id = ?',
-      req.params.id
+      'SELECT * FROM monthly_reports WHERE id = ? AND company_id = ?',
+      req.params.id, companyId
     );
     if (!report) return res.status(404).json({ error: 'Report not found' });
 
@@ -574,26 +616,27 @@ router.get('/reports/monthly/:id/pdf', authenticate, async (req, res) => {
 
 // GET /api/analytics/health-score — Sentinel Health Score (0-100)
 router.get('/health-score', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const now = new Date();
     const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
 
-    // Resolution rate (25 pts): % of tickets resolved/closed in last 30 days
+    // Resolution rate (25 pts)
     const totalTickets = await db.get(
-      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1`, thirtyDaysAgo
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND company_id = $2`, thirtyDaysAgo, companyId
     );
     const resolvedTickets = await db.get(
-      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND status IN ('resolved','closed')`, thirtyDaysAgo
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND status IN ('resolved','closed') AND company_id = $2`, thirtyDaysAgo, companyId
     );
     const total = parseInt(totalTickets.cnt) || 0;
     const resolved = parseInt(resolvedTickets.cnt) || 0;
     const resolutionRate = total > 0 ? resolved / total : 1;
     const resolutionScore = Math.round(resolutionRate * 25);
 
-    // Avg resolution time (20 pts): <4h=20, <8h=16, <24h=12, <48h=8, <72h=4, else 0
+    // Avg resolution time (20 pts)
     const avgTimeRow = await db.get(
       `SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at))/3600) as avg_hours
-       FROM tickets WHERE resolved_at IS NOT NULL AND created_at >= $1`, thirtyDaysAgo
+       FROM tickets WHERE resolved_at IS NOT NULL AND created_at >= $1 AND company_id = $2`, thirtyDaysAgo, companyId
     );
     const avgHours = parseFloat(avgTimeRow.avg_hours) || 48;
     let timeScore = 0;
@@ -603,34 +646,35 @@ router.get('/health-score', authenticate, async (req, res) => {
     else if (avgHours <= 48) timeScore = 8;
     else if (avgHours <= 72) timeScore = 4;
 
-    // Satisfaction (20 pts): based on % thumbs up
+    // Satisfaction (20 pts)
     const satRow = await db.get(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN rating='up' THEN 1 ELSE 0 END) as positive
-       FROM satisfaction_ratings
-       WHERE submitted_at IS NOT NULL AND sent_at >= $1`, thirtyDaysAgo
+       FROM satisfaction_ratings sr
+       JOIN tickets t ON sr.ticket_id = t.id
+       WHERE sr.submitted_at IS NOT NULL AND sr.sent_at >= $1 AND t.company_id = $2`, thirtyDaysAgo, companyId
     );
     const satTotal = parseInt(satRow.total) || 0;
     const satPositive = parseInt(satRow.positive) || 0;
     const satRate = satTotal > 0 ? satPositive / satTotal : 0.8;
     const satScore = Math.round(satRate * 20);
 
-    // ATLAS autonomous rate (15 pts): % of tickets AI handled without escalation
+    // ATLAS autonomous rate (15 pts)
     const atlasRow = await db.get(
       `SELECT COUNT(*) as total,
               SUM(CASE WHEN ai_attempted=1 AND assignee_id IS NULL THEN 1 ELSE 0 END) as autonomous
-       FROM tickets WHERE created_at >= $1`, thirtyDaysAgo
+       FROM tickets WHERE created_at >= $1 AND company_id = $2`, thirtyDaysAgo, companyId
     );
     const atlasTotal = parseInt(atlasRow.total) || 0;
     const atlasAuto = parseInt(atlasRow.autonomous) || 0;
     const atlasRate = atlasTotal > 0 ? atlasAuto / atlasTotal : 0;
     const atlasScore = Math.round(atlasRate * 15);
 
-    // Volume trend (10 pts): compare this 30 days vs previous 30 days — stable/decreasing is good
+    // Volume trend (10 pts)
     const sixtyDaysAgo = new Date(now - 60 * 24 * 60 * 60 * 1000);
     const prevPeriod = await db.get(
-      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND created_at < $2`,
-      sixtyDaysAgo, thirtyDaysAgo
+      `SELECT COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND created_at < $2 AND company_id = $3`,
+      sixtyDaysAgo, thirtyDaysAgo, companyId
     );
     const prevTotal = parseInt(prevPeriod.cnt) || total;
     const trendRatio = prevTotal > 0 ? total / prevTotal : 1;
@@ -638,9 +682,9 @@ router.get('/health-score', authenticate, async (req, res) => {
     if (trendRatio > 1.3) trendScore = 4;
     else if (trendRatio > 1.1) trendScore = 7;
 
-    // Recurring issues (10 pts): penalize if any category has >20% of tickets
+    // Recurring issues (10 pts)
     const catRows = await db.all(
-      `SELECT category, COUNT(*) as cnt FROM tickets WHERE created_at >= $1 GROUP BY category`, thirtyDaysAgo
+      `SELECT category, COUNT(*) as cnt FROM tickets WHERE created_at >= $1 AND company_id = $2 GROUP BY category`, thirtyDaysAgo, companyId
     );
     const maxCatPct = total > 0
       ? Math.max(...catRows.map(r => parseInt(r.cnt) / total))

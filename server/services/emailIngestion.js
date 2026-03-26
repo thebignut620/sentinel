@@ -1,8 +1,11 @@
 import { ImapFlow } from 'imapflow';
 import db from '../db/connection.js';
 
-async function getImapSettings() {
-  const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'imap_%' OR key = 'email_ingestion_enabled'");
+async function getImapSettings(companyId = 1) {
+  const rows = await db.all(
+    "SELECT key, value FROM settings WHERE (key LIKE 'imap_%' OR key = 'email_ingestion_enabled') AND company_id = ?",
+    companyId
+  );
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
@@ -12,7 +15,20 @@ export async function pollEmailInbox() {
   if (isPolling) return;
   isPolling = true;
   try {
-    const cfg = await getImapSettings();
+    const companies = await db.all('SELECT id FROM companies ORDER BY id ASC');
+    for (const { id: companyId } of companies) {
+      await pollCompanyInbox(companyId);
+    }
+  } catch (e) {
+    console.error('[EmailIngestion] Poll error:', e.message);
+  } finally {
+    isPolling = false;
+  }
+}
+
+async function pollCompanyInbox(companyId) {
+  try {
+    const cfg = await getImapSettings(companyId);
     if (cfg.email_ingestion_enabled !== 'true') return;
     if (!cfg.imap_host || !cfg.imap_user || !cfg.imap_pass) return;
 
@@ -43,14 +59,14 @@ export async function pollEmailInbox() {
 
       for (const msg of messages) {
         try {
-          await processEmail(msg, client);
+          await processEmail(msg, client, companyId);
         } catch (e) {
           console.error('[EmailIngestion] Failed to process message:', e.message);
         }
       }
 
       if (messages.length > 0) {
-        console.log(`[EmailIngestion] Processed ${messages.length} new email(s)`);
+        console.log(`[EmailIngestion] Processed ${messages.length} new email(s) for company ${companyId}`);
       }
     } finally {
       lock.release();
@@ -58,13 +74,11 @@ export async function pollEmailInbox() {
 
     await client.logout();
   } catch (e) {
-    console.error('[EmailIngestion] Poll error:', e.message);
-  } finally {
-    isPolling = false;
+    console.error(`[EmailIngestion] Poll error for company ${companyId}:`, e.message);
   }
 }
 
-async function processEmail(msg, client) {
+async function processEmail(msg, client, companyId = 1) {
   const envelope = msg.envelope;
   const subject = envelope.subject || '(No subject)';
   const fromAddr = envelope.from?.[0]?.address || '';
@@ -78,51 +92,56 @@ async function processEmail(msg, client) {
 
   // Check if this is a reply to an existing thread
   if (inReplyTo) {
-    // Try to find existing ticket via comment body referencing the message id
+    // Try to find existing ticket via comment body referencing the message id (scoped to company)
     const existingComment = await db.get(
-      "SELECT ticket_id FROM ticket_comments WHERE body LIKE ?",
-      `%${inReplyTo}%`
+      `SELECT tc.ticket_id FROM ticket_comments tc
+       JOIN tickets t ON t.id = tc.ticket_id
+       WHERE tc.body LIKE ? AND t.company_id = ?`,
+      `%${inReplyTo}%`, companyId
     );
     if (existingComment) {
-      // Find or create a system user for email replies
-      let systemUser = await db.get("SELECT id FROM users WHERE email = 'system@sentinel.local'");
+      // Find or create a system user for email replies (scoped to company)
+      let systemUser = await db.get("SELECT id FROM users WHERE email = 'system@sentinel.local' AND company_id = ?", companyId);
       if (!systemUser) {
         const inserted = await db.run(
-          "INSERT INTO users (name, email, password, role) VALUES ('Email Bot', 'system@sentinel.local', 'disabled', 'employee')"
+          "INSERT INTO users (name, email, password, role, company_id) VALUES ('Email Bot', 'system@sentinel.local', 'disabled', 'employee', ?)",
+          companyId
         );
         systemUser = { id: inserted.lastID ?? inserted.lastInsertRowid };
       }
 
       await db.run(
-        'INSERT INTO ticket_comments (ticket_id, user_id, body) VALUES (?, ?, ?)',
+        'INSERT INTO ticket_comments (ticket_id, user_id, body, company_id) VALUES (?, ?, ?, ?)',
         existingComment.ticket_id,
         systemUser.id,
-        `📧 **Reply from ${fromName} <${fromAddr}>:**\n\n${bodyText}\n\n<!-- message-id: ${messageId} -->`
+        `📧 **Reply from ${fromName} <${fromAddr}>:**\n\n${bodyText}\n\n<!-- message-id: ${messageId} -->`,
+        companyId
       );
       await client.messageFlagsAdd(msg.seq, ['\\Seen']);
       return;
     }
   }
 
-  // Find submitter by email, or use first admin as fallback
-  let submitter = await db.get('SELECT id FROM users WHERE email = ? AND is_active = 1', fromAddr);
+  // Find submitter by email within this company, or use first admin as fallback
+  let submitter = await db.get('SELECT id FROM users WHERE email = ? AND is_active = 1 AND company_id = ?', fromAddr, companyId);
   if (!submitter) {
-    submitter = await db.get("SELECT id FROM users WHERE role = 'admin' AND is_active = 1 LIMIT 1");
+    submitter = await db.get("SELECT id FROM users WHERE role = 'admin' AND is_active = 1 AND company_id = ? LIMIT 1", companyId);
   }
   if (!submitter) return;
 
   // Create ticket
   const result = await db.run(`
-    INSERT INTO tickets (title, description, priority, category, submitter_id, ai_attempted, sla_due_at)
-    VALUES (?, ?, 'medium', 'software', ?, 0, NOW() + INTERVAL '24 hours')
+    INSERT INTO tickets (title, description, priority, category, submitter_id, ai_attempted, sla_due_at, company_id)
+    VALUES (?, ?, 'medium', 'software', ?, 0, NOW() + INTERVAL '24 hours', ?)
   `,
     subject.slice(0, 200),
     `${bodyText}\n\n<!-- source: email | from: ${fromAddr} | message-id: ${messageId} -->`,
-    submitter.id
+    submitter.id,
+    companyId
   );
 
   const ticketId = result.lastID ?? result.lastInsertRowid;
-  console.log(`[EmailIngestion] Created ticket #${ticketId} from email: ${subject}`);
+  console.log(`[EmailIngestion] Created ticket #${ticketId} from email for company ${companyId}: ${subject}`);
 
   // Mark as seen
   await client.messageFlagsAdd(msg.seq, ['\\Seen']);

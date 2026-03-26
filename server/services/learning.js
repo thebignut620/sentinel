@@ -82,7 +82,7 @@ async function checkAutoKBPromotion(solutionId) {
 }
 
 // Gather stats for the weekly intelligence report
-export async function gatherWeeklyStats() {
+export async function gatherWeeklyStats(companyId = 1) {
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const [
@@ -94,20 +94,20 @@ export async function gatherWeeklyStats() {
     newSolutions,
     struggling,
   ] = await Promise.all([
-    db.get('SELECT COUNT(*) as count FROM tickets WHERE created_at >= ?', oneWeekAgo),
-    db.get("SELECT COUNT(*) as count FROM tickets WHERE resolved_at >= ? AND status IN ('resolved','closed')", oneWeekAgo),
+    db.get('SELECT COUNT(*) as count FROM tickets WHERE created_at >= ? AND company_id = ?', oneWeekAgo, companyId),
+    db.get("SELECT COUNT(*) as count FROM tickets WHERE resolved_at >= ? AND status IN ('resolved','closed') AND company_id = ?", oneWeekAgo, companyId),
     db.get(`SELECT AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600) as avg_hours
-            FROM tickets WHERE resolved_at >= ? AND status IN ('resolved','closed')`, oneWeekAgo),
+            FROM tickets WHERE resolved_at >= ? AND status IN ('resolved','closed') AND company_id = ?`, oneWeekAgo, companyId),
     db.all(`SELECT category, COUNT(*) as count FROM tickets
-            WHERE created_at >= ? GROUP BY category ORDER BY count DESC LIMIT 5`, oneWeekAgo),
+            WHERE created_at >= ? AND company_id = ? GROUP BY category ORDER BY count DESC LIMIT 5`, oneWeekAgo, companyId),
     db.all(`SELECT category, problem_summary, success_count, tried_count, success_rate
             FROM learned_solutions
-            WHERE tried_count >= 3 ORDER BY success_rate DESC, tried_count DESC LIMIT 5`),
-    db.get('SELECT COUNT(*) as count FROM learned_solutions WHERE created_at >= ?', oneWeekAgo),
+            WHERE tried_count >= 3 AND company_id = ? ORDER BY success_rate DESC, tried_count DESC LIMIT 5`, companyId),
+    db.get('SELECT COUNT(*) as count FROM learned_solutions WHERE created_at >= ? AND company_id = ?', oneWeekAgo, companyId),
     db.all(`SELECT category, problem_summary, success_count, tried_count, success_rate
             FROM learned_solutions
-            WHERE tried_count >= 3 AND success_rate < 50
-            ORDER BY tried_count DESC LIMIT 3`),
+            WHERE tried_count >= 3 AND success_rate < 50 AND company_id = ?
+            ORDER BY tried_count DESC LIMIT 3`, companyId),
   ]);
 
   return {

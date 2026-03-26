@@ -51,6 +51,8 @@ const Templates = lazy(() => import('./pages/admin/Templates.jsx'));
 const Clusters = lazy(() => import('./pages/admin/Clusters.jsx'));
 const Billing = lazy(() => import('./pages/admin/Billing.jsx'));
 const NotificationPreferences = lazy(() => import('./pages/NotificationPreferences.jsx'));
+const Automations = lazy(() => import('./pages/admin/Automations.jsx'));
+const PublicKnowledgeBase = lazy(() => import('./pages/PublicKnowledgeBase.jsx'));
 
 import api from './api/client.js';
 
@@ -150,6 +152,7 @@ function AppInner() {
         <Route path="/survey/:token" element={<SurveyFeedback />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/changelog" element={<Changelog />} />
+        <Route path="/help-center" element={<PublicKnowledgeBase />} />
 
         {/* Onboarding wizard — full screen, no sidebar */}
         <Route
@@ -198,6 +201,7 @@ function AppInner() {
           <Route path="admin/templates"       element={<ProtectedRoute roles={['admin', 'it_staff']}><Templates /></ProtectedRoute>} />
           <Route path="admin/clusters"        element={<ProtectedRoute roles={['admin', 'it_staff']}><Clusters /></ProtectedRoute>} />
           <Route path="admin/billing"         element={<ProtectedRoute roles={['admin']}><Billing /></ProtectedRoute>} />
+          <Route path="admin/automations"     element={<ProtectedRoute roles={['admin']}><Automations /></ProtectedRoute>} />
           <Route path="settings/2fa"          element={<TwoFactorSetup />} />
           <Route path="notification-preferences" element={<NotificationPreferences />} />
         </Route>

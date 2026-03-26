@@ -150,7 +150,7 @@ export function generateCustomReportPdf({ tickets, dateFrom, dateTo }) {
 }
 
 // ─── MONTHLY REPORT: GATHER DATA + ATLAS NARRATION ───────────────────────────
-export async function generateMonthlyReport() {
+export async function generateMonthlyReport(companyId = 1) {
   const now = new Date();
   const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
@@ -174,9 +174,10 @@ export async function generateMonthlyReport() {
         AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600)
           FILTER (WHERE resolved_at IS NOT NULL) as avg_resolution_hours,
         COUNT(*) FILTER (WHERE ai_attempted = 1 OR ai_auto_assigned = 1) as atlas_handled
-       FROM tickets WHERE created_at BETWEEN ? AND ?`,
+       FROM tickets WHERE created_at BETWEEN ? AND ? AND company_id = ?`,
       prevStart,
-      prevEnd
+      prevEnd,
+      companyId
     ),
     db.all(
       `SELECT u.name,
@@ -186,28 +187,33 @@ export async function generateMonthlyReport() {
        FROM users u
        LEFT JOIN tickets t ON t.assignee_id = u.id
          AND t.created_at BETWEEN ? AND ?
-       WHERE u.role IN ('it_staff', 'admin') AND u.is_active = 1
+         AND t.company_id = ?
+       WHERE u.role IN ('it_staff', 'admin') AND u.is_active = 1 AND u.company_id = ?
        GROUP BY u.id, u.name
        ORDER BY resolved_count DESC
        LIMIT 5`,
       prevStart,
-      prevEnd
+      prevEnd,
+      companyId,
+      companyId
     ),
     db.all(
       `SELECT category, COUNT(*) as count
-       FROM tickets WHERE created_at BETWEEN ? AND ?
+       FROM tickets WHERE created_at BETWEEN ? AND ? AND company_id = ?
        GROUP BY category ORDER BY count DESC`,
       prevStart,
-      prevEnd
+      prevEnd,
+      companyId
     ),
     db.get(
       `SELECT COUNT(*) as total_rated,
         COUNT(*) FILTER (WHERE sr.rating = 'up') as thumbs_up
        FROM satisfaction_ratings sr
        JOIN tickets t ON sr.ticket_id = t.id
-       WHERE sr.submitted_at BETWEEN ? AND ?`,
+       WHERE sr.submitted_at BETWEEN ? AND ? AND t.company_id = ?`,
       prevStart,
-      prevEnd
+      prevEnd,
+      companyId
     ),
   ]);
 
@@ -221,7 +227,8 @@ export async function generateMonthlyReport() {
   let reportText = '';
   try {
     const aiRows = await db.all(
-      "SELECT key, value FROM settings WHERE key IN ('ai_enabled', 'company_name')"
+      "SELECT key, value FROM settings WHERE key IN ('ai_enabled', 'company_name') AND company_id = ?",
+      companyId
     );
     const settings = Object.fromEntries(aiRows.map(r => [r.key, r.value]));
 
@@ -283,15 +290,16 @@ Use a professional but friendly tone. Do not use markdown headers.`;
   }
 
   await db.run(
-    `INSERT INTO monthly_reports (report_month, report_text, stats)
-     VALUES (?, ?, ?)
-     ON CONFLICT (report_month)
+    `INSERT INTO monthly_reports (report_month, report_text, stats, company_id)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT (report_month, company_id)
      DO UPDATE SET report_text = EXCLUDED.report_text,
                    stats = EXCLUDED.stats,
                    generated_at = NOW()`,
     monthKey,
     reportText,
-    JSON.stringify(stats)
+    JSON.stringify(stats),
+    companyId
   );
 
   return { reportText, stats };

@@ -6,8 +6,13 @@ const router = express.Router();
 
 router.get('/', authenticate, async (req, res) => {
   const isEmployee = req.user.role === 'employee';
-  const whereUser = isEmployee ? 'WHERE t.submitter_id = ?' : 'WHERE 1=1';
-  const params = isEmployee ? [req.user.id] : [];
+  const companyId = req.user.company_id || 1;
+
+  // Build WHERE clause: always scope by company, optionally also by submitter
+  const whereUser = isEmployee
+    ? 'WHERE t.submitter_id = ? AND t.company_id = ?'
+    : 'WHERE t.company_id = ?';
+  const params = isEmployee ? [req.user.id, companyId] : [companyId];
 
   const [
     statusCounts,

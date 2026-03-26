@@ -7,8 +7,10 @@ const router = express.Router();
 
 // Get all users (admin only; it_staff can read for assigning tickets)
 router.get('/', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
+  const companyId = req.user.company_id || 1;
   const users = await db.all(
-    'SELECT id, name, email, role, is_active, created_at FROM users ORDER BY created_at DESC'
+    'SELECT id, name, email, role, is_active, created_at FROM users WHERE company_id = ? ORDER BY created_at DESC',
+    companyId
   );
   res.json(users);
 });
@@ -21,10 +23,11 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   }
 
   try {
+    const companyId = req.user.company_id || 1;
     const hash = bcrypt.hashSync(password, 10);
     const result = await db.run(
-      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
-      name.trim(), email.trim().toLowerCase(), hash, role
+      'INSERT INTO users (name, email, password, role, company_id) VALUES (?, ?, ?, ?, ?)',
+      name.trim(), email.trim().toLowerCase(), hash, role, companyId
     );
 
     const user = await db.get(
@@ -55,10 +58,11 @@ router.patch('/:id', authenticate, requireRole('admin'), async (req, res) => {
   if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
 
   try {
-    await db.run(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, ...values, req.params.id);
+    const companyId = req.user.company_id || 1;
+    await db.run(`UPDATE users SET ${fields.join(', ')} WHERE id = ? AND company_id = ?`, ...values, req.params.id, companyId);
     const user = await db.get(
-      'SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ?',
-      req.params.id
+      'SELECT id, name, email, role, is_active, created_at FROM users WHERE id = ? AND company_id = ?',
+      req.params.id, companyId
     );
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json(user);
@@ -75,7 +79,8 @@ router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
   if (parseInt(req.params.id) === req.user.id) {
     return res.status(400).json({ error: 'Cannot deactivate your own account' });
   }
-  const result = await db.run('UPDATE users SET is_active = 0 WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const result = await db.run('UPDATE users SET is_active = 0 WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (result.changes === 0) return res.status(404).json({ error: 'User not found' });
   res.json({ message: 'User deactivated' });
 });

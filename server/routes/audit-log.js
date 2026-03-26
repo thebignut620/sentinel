@@ -7,9 +7,10 @@ const router = express.Router();
 // Query audit log
 router.get('/', authenticate, requireRole('admin'), async (req, res) => {
   const { user_id, action, entity_type, entity_id, from, to, limit = 100, offset = 0 } = req.query;
+  const companyId = req.user.company_id || 1;
 
-  let query = 'SELECT * FROM audit_log WHERE 1=1';
-  const params = [];
+  let query = 'SELECT * FROM audit_log WHERE company_id = ?';
+  const params = [companyId];
 
   if (user_id)     { query += ' AND user_id = ?';     params.push(user_id); }
   if (action)      { query += ' AND action ILIKE ?';   params.push(`%${action}%`); }

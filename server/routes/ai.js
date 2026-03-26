@@ -442,6 +442,71 @@ router.get('/learning-stats', async (req, res) => {
   }
 });
 
+// POST /ai/analyze-error — ATLAS error code intelligence
+router.post('/analyze-error', async (req, res) => {
+  const { error_code, context } = req.body;
+  if (!error_code?.trim()) return res.status(400).json({ error: 'error_code required' });
+  const companyId = req.user?.company_id || 1;
+
+  const profile = await db.get('SELECT * FROM company_profile WHERE company_id = ?', companyId).catch(() => null);
+
+  try {
+    const systemPrompt = `You are ATLAS, an expert IT error code analyst. When given an error code or error message:
+1. Identify what system it's from (Windows, macOS, Office, network, browser, etc.)
+2. Explain it in plain English (1-2 sentences max)
+3. Give the exact fix with numbered steps (3-6 steps max, be specific)
+4. Briefly explain WHY this fix works (1 sentence)
+5. Provide a Plan B alternative approach
+6. Warn about any data loss risks if applicable
+
+Format your response as JSON with these exact keys:
+{
+  "error_code": "the exact code",
+  "system": "what system this is from",
+  "plain_english": "what this error means in simple terms",
+  "severity": "low|medium|high|critical",
+  "fix_steps": ["step 1", "step 2"],
+  "why_it_works": "brief explanation",
+  "plan_b": "alternative approach if primary fix fails",
+  "data_loss_risk": "warning if applicable, or null",
+  "create_ticket_if_fails": true
+}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [{
+        role: 'user',
+        content: `Error code: ${error_code.trim()}${context ? `\nContext: ${context}` : ''}\n${profile ? `Company uses: ${profile.os_types || ''} ${profile.primary_software || ''}` : ''}`,
+      }],
+    });
+
+    const text = response.content[0].text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      return res.json(parsed);
+    }
+
+    // Fallback if not JSON
+    res.json({
+      error_code: error_code.trim(),
+      system: 'Unknown',
+      plain_english: text,
+      severity: 'medium',
+      fix_steps: ['See ATLAS analysis above'],
+      why_it_works: null,
+      plan_b: 'Create a support ticket if this does not resolve the issue.',
+      data_loss_risk: null,
+      create_ticket_if_fails: true,
+    });
+  } catch (e) {
+    console.error('[ai/analyze-error] error:', e.message);
+    res.status(500).json({ error: 'Failed to analyze error code' });
+  }
+});
+
 // GET /ai/suggestions/:ticketId — return atlas_suggestions for a ticket
 router.get('/suggestions/:ticketId', async (req, res) => {
   const ticket = await db.get(

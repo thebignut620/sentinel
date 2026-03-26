@@ -10,7 +10,11 @@ const VALID_EVENTS = ['ticket.created', 'ticket.updated', 'ticket.resolved', 'ti
 
 // GET /api/webhooks — list all webhooks
 router.get('/', authenticate, requireRole('admin'), async (req, res) => {
-  const hooks = await db.all('SELECT id, name, url, events, is_active, created_at FROM webhooks ORDER BY created_at DESC');
+  const companyId = req.user.company_id || 1;
+  const hooks = await db.all(
+    'SELECT id, name, url, events, is_active, created_at FROM webhooks WHERE company_id = ? ORDER BY created_at DESC',
+    companyId
+  );
   res.json(hooks);
 });
 
@@ -31,9 +35,10 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     return res.status(400).json({ error: `Invalid events: ${invalidEvents.join(', ')}` });
   }
 
+  const companyId = req.user.company_id || 1;
   const result = await db.run(
-    'INSERT INTO webhooks (name, url, secret, events) VALUES (?, ?, ?, ?)',
-    name.trim(), url.trim(), secret || '', eventList.join(',')
+    'INSERT INTO webhooks (name, url, secret, events, company_id) VALUES (?, ?, ?, ?, ?)',
+    name.trim(), url.trim(), secret || '', eventList.join(','), companyId
   );
 
   const hook = await db.get('SELECT * FROM webhooks WHERE id = ?', result.lastID ?? result.lastInsertRowid);
@@ -43,7 +48,8 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
 
 // PATCH /api/webhooks/:id — update webhook
 router.patch('/:id', authenticate, requireRole('admin'), async (req, res) => {
-  const hook = await db.get('SELECT * FROM webhooks WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const hook = await db.get('SELECT * FROM webhooks WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!hook) return res.status(404).json({ error: 'Webhook not found' });
 
   const { name, url, secret, events, is_active } = req.body;
@@ -70,7 +76,8 @@ router.patch('/:id', authenticate, requireRole('admin'), async (req, res) => {
 
 // DELETE /api/webhooks/:id — delete webhook
 router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
-  const hook = await db.get('SELECT id FROM webhooks WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const hook = await db.get('SELECT id FROM webhooks WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!hook) return res.status(404).json({ error: 'Webhook not found' });
 
   await db.run('DELETE FROM webhooks WHERE id = ?', req.params.id);
@@ -80,7 +87,8 @@ router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
 
 // POST /api/webhooks/:id/test — send test payload
 router.post('/:id/test', authenticate, requireRole('admin'), async (req, res) => {
-  const hook = await db.get('SELECT * FROM webhooks WHERE id = ?', req.params.id);
+  const companyId = req.user.company_id || 1;
+  const hook = await db.get('SELECT * FROM webhooks WHERE id = ? AND company_id = ?', req.params.id, companyId);
   if (!hook) return res.status(404).json({ error: 'Webhook not found' });
 
   const payload = {

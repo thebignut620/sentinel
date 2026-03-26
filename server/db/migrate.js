@@ -8,6 +8,12 @@ async function addColumnIfMissing(table, column, definition) {
 export async function runMigrations() {
   // Run each CREATE TABLE separately (pg doesn't support multi-statement exec)
   const tables = [
+    `CREATE TABLE IF NOT EXISTS companies (
+      id         SERIAL PRIMARY KEY,
+      name       TEXT NOT NULL,
+      slug       TEXT NOT NULL UNIQUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
     `CREATE TABLE IF NOT EXISTS users (
       id         SERIAL PRIMARY KEY,
       name       TEXT NOT NULL,
@@ -369,6 +375,97 @@ export async function runMigrations() {
       ticket_id   INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
       PRIMARY KEY (cluster_id, ticket_id)
     )`,
+    // Phase 7 tables — new features
+    `CREATE TABLE IF NOT EXISTS chat_sessions (
+      id             SERIAL PRIMARY KEY,
+      user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      company_id     INTEGER NOT NULL DEFAULT 1,
+      status         TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','closed','converted')),
+      ticket_id      INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+      taken_over_by  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      taken_over_at  TIMESTAMPTZ,
+      rating         TEXT CHECK(rating IN ('up','down')),
+      message_count  INTEGER NOT NULL DEFAULT 0,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS chat_messages (
+      id         SERIAL PRIMARY KEY,
+      session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+      role       TEXT NOT NULL CHECK(role IN ('user','assistant','system')),
+      content    TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS automation_rules (
+      id           SERIAL PRIMARY KEY,
+      company_id   INTEGER NOT NULL DEFAULT 1,
+      name         TEXT NOT NULL,
+      description  TEXT,
+      trigger_type TEXT NOT NULL,
+      trigger_config TEXT NOT NULL DEFAULT '{}',
+      condition_logic TEXT NOT NULL DEFAULT 'AND',
+      conditions   TEXT NOT NULL DEFAULT '[]',
+      actions      TEXT NOT NULL DEFAULT '[]',
+      is_enabled   INTEGER NOT NULL DEFAULT 1,
+      run_count    INTEGER NOT NULL DEFAULT 0,
+      last_run_at  TIMESTAMPTZ,
+      created_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS automation_logs (
+      id           SERIAL PRIMARY KEY,
+      rule_id      INTEGER NOT NULL REFERENCES automation_rules(id) ON DELETE CASCADE,
+      company_id   INTEGER NOT NULL DEFAULT 1,
+      ticket_id    INTEGER REFERENCES tickets(id) ON DELETE SET NULL,
+      triggered_by TEXT NOT NULL,
+      actions_taken TEXT NOT NULL DEFAULT '[]',
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS time_entries (
+      id          SERIAL PRIMARY KEY,
+      ticket_id   INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      company_id  INTEGER NOT NULL DEFAULT 1,
+      duration_minutes INTEGER NOT NULL DEFAULT 0,
+      description TEXT,
+      started_at  TIMESTAMPTZ,
+      ended_at    TIMESTAMPTZ,
+      is_running  INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
+    `CREATE TABLE IF NOT EXISTS ticket_relations (
+      id          SERIAL PRIMARY KEY,
+      parent_id   INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      child_id    INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+      company_id  INTEGER NOT NULL DEFAULT 1,
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (parent_id, child_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS asset_relations (
+      id            SERIAL PRIMARY KEY,
+      from_asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      to_asset_id   INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      relation_type TEXT NOT NULL DEFAULT 'connected_to',
+      company_id    INTEGER NOT NULL DEFAULT 1,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (from_asset_id, to_asset_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS software_licenses (
+      id            SERIAL PRIMARY KEY,
+      company_id    INTEGER NOT NULL DEFAULT 1,
+      software_name TEXT NOT NULL,
+      vendor        TEXT,
+      license_type  TEXT,
+      seats_purchased INTEGER NOT NULL DEFAULT 1,
+      seats_used    INTEGER NOT NULL DEFAULT 0,
+      cost_per_seat NUMERIC(10,2),
+      renewal_date  DATE,
+      notes         TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`,
   ];
 
   for (const sql of tables) {
@@ -395,6 +492,64 @@ export async function runMigrations() {
   await addColumnIfMissing('tickets',  'is_escalated',      'INTEGER NOT NULL DEFAULT 0');
   await addColumnIfMissing('tickets',  'department_id',     'INTEGER');
   await addColumnIfMissing('tickets',  'custom_fields',     'TEXT');
+  // Multi-tenancy columns
+  await addColumnIfMissing('users',              'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('tickets',            'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('knowledge_base',     'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('assets',             'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('departments',        'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('incidents',          'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('notifications',      'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('audit_log',          'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('integrations',       'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('webhooks',           'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('api_keys',           'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('ticket_templates',   'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('ticket_clusters',    'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('maintenance_windows','company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('custom_fields',      'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('monthly_reports',    'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('learned_solutions',  'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  await addColumnIfMissing('company_profile',    'company_id', 'INTEGER NOT NULL DEFAULT 1');
+  // Phase 7 columns
+  await addColumnIfMissing('knowledge_base', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('companies', 'support_email', 'TEXT');
+  await addColumnIfMissing('companies', 'support_email_slug', 'TEXT');
+  await addColumnIfMissing('companies', 'is_sandbox', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumnIfMissing('tickets', 'parent_id', 'INTEGER');
+  await addColumnIfMissing('assets', 'purchase_cost', 'NUMERIC(10,2)');
+  await addColumnIfMissing('assets', 'depreciation_years', 'INTEGER NOT NULL DEFAULT 5');
+  await addColumnIfMissing('assets', 'qr_code', 'TEXT');
+  await addColumnIfMissing('assets', 'location', 'TEXT');
+  await addColumnIfMissing('satisfaction_ratings', 'star_rating', 'INTEGER');
+  await addColumnIfMissing('satisfaction_ratings', 'speed_rating', 'INTEGER');
+  await addColumnIfMissing('satisfaction_ratings', 'quality_rating', 'INTEGER');
+  await addColumnIfMissing('satisfaction_ratings', 'communication_rating', 'INTEGER');
+  await addColumnIfMissing('satisfaction_ratings', 'atlas_rating', 'INTEGER');
+  await addColumnIfMissing('satisfaction_ratings', 'nps_score', 'INTEGER');
+
+  // Settings: add company_id column, change PK to (company_id, key)
+  await db.run(`ALTER TABLE settings ADD COLUMN IF NOT EXISTS company_id INTEGER NOT NULL DEFAULT 1`);
+  await db.run(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'settings_company_key_pkey'
+      ) THEN
+        ALTER TABLE settings DROP CONSTRAINT IF EXISTS settings_pkey;
+        ALTER TABLE settings ADD CONSTRAINT settings_company_key_pkey PRIMARY KEY (company_id, key);
+      END IF;
+    END $$;
+  `);
+
+  // Ensure default company exists
+  await db.run(`
+    INSERT INTO companies (id, name, slug) VALUES (1, 'Sentinel IT', 'sentinel-it')
+    ON CONFLICT (id) DO NOTHING
+  `);
+  // Fix sequence after manual id insert
+  await db.run(`SELECT setval('companies_id_seq', GREATEST(1, (SELECT MAX(id) FROM companies)))`);
 
   // Seed default settings
   const settingSeeds = [
@@ -436,7 +591,7 @@ export async function runMigrations() {
   ];
   for (const [key, value] of settingSeeds) {
     await db.run(
-      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING',
+      'INSERT INTO settings (company_id, key, value) VALUES (1, ?, ?) ON CONFLICT (company_id, key) DO NOTHING',
       key, value
     );
   }
@@ -474,12 +629,13 @@ export async function runMigrations() {
   // overwrite a manually-changed password for any *other* account.
   const adminHash = bcrypt.hashSync('420699202005', 10);
   await db.run(
-    `INSERT INTO users (name, email, password, role, is_active)
-     VALUES (?, ?, ?, ?, 1)
+    `INSERT INTO users (name, email, password, role, is_active, company_id)
+     VALUES (?, ?, ?, ?, 1, 1)
      ON CONFLICT (email) DO UPDATE
-       SET password  = EXCLUDED.password,
-           role      = EXCLUDED.role,
-           is_active = 1`,
+       SET password   = EXCLUDED.password,
+           role       = EXCLUDED.role,
+           is_active  = 1,
+           company_id = 1`,
     'Admin User', 'iguinn141@gmail.com', adminHash, 'admin'
   );
   console.log('✓ Admin account ensured: iguinn141@gmail.com');

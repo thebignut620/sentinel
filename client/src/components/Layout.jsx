@@ -7,6 +7,8 @@ import AppFooter from './AppFooter.jsx';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal.jsx';
 import useKeyboardShortcuts from '../hooks/useKeyboardShortcuts.js';
 import api from '../api/client.js';
+import ChatWidget from './ChatWidget.jsx';
+import SandboxBanner from './SandboxBanner.jsx';
 
 function TrialBanner({ status }) {
   if (!status || status.status !== 'trialing' || status.isExpired) return null;
@@ -385,6 +387,7 @@ export default function Layout() {
       { to: '/admin/analytics#learning', icon: ICONS.analytics, label: 'Learning Stats' },
       { to: '/admin/templates',        icon: ICONS.template,    label: 'Reply Templates' },
       { to: '/admin/clusters',         icon: ICONS.cluster,     label: 'Ticket Clusters' },
+      { to: '/admin/automations',      icon: ICONS.plug,        label: 'Automations' },
       { section: 'Management' },
       { to: '/admin/users',            icon: ICONS.users,       label: 'User Management' },
       { to: '/admin/assets',           icon: ICONS.asset,       label: 'Assets' },
@@ -515,6 +518,7 @@ export default function Layout() {
 
       {/* Main — extra bottom padding on mobile for the bottom nav */}
       <main id="main-content" className="flex-1 overflow-auto flex flex-col min-w-0">
+        <SandboxBanner />
         <IncidentBanner />
         {user?.role === 'admin' && <TrialBanner status={billingStatus} />}
         {billingStatus?.isExpired && pathname !== '/admin/billing'
@@ -533,6 +537,9 @@ export default function Layout() {
 
       {/* Keyboard shortcuts modal */}
       {showShortcuts && <KeyboardShortcutsModal onClose={() => setShowShortcuts(false)} />}
+
+      {/* Global floating chat widget */}
+      <ChatWidget />
     </div>
   );
 }

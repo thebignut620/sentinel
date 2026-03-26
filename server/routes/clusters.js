@@ -20,14 +20,17 @@ function extractJSON(text, fallback) {
 
 // GET /api/clusters — list clusters with member count
 router.get('/', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
     const clusters = await db.all(
       `SELECT c.*,
               COUNT(m.ticket_id) as ticket_count
        FROM ticket_clusters c
        LEFT JOIN ticket_cluster_members m ON m.cluster_id = c.id
+       WHERE c.company_id = ?
        GROUP BY c.id
-       ORDER BY c.created_at DESC`
+       ORDER BY c.created_at DESC`,
+      companyId
     );
     res.json(clusters);
   } catch (err) {
@@ -38,8 +41,9 @@ router.get('/', authenticate, async (req, res) => {
 
 // GET /api/clusters/:id — get cluster with all member tickets
 router.get('/:id', authenticate, async (req, res) => {
+  const companyId = req.user.company_id || 1;
   try {
-    const cluster = await db.get(`SELECT * FROM ticket_clusters WHERE id = ?`, req.params.id);
+    const cluster = await db.get(`SELECT * FROM ticket_clusters WHERE id = ? AND company_id = ?`, req.params.id, companyId);
     if (!cluster) return res.status(404).json({ error: 'Cluster not found' });
 
     const tickets = await db.all(
@@ -63,9 +67,10 @@ router.get('/:id', authenticate, async (req, res) => {
 router.post('/:id/bulk-resolve', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const { resolution } = req.body;
   const { id } = req.params;
+  const companyId = req.user.company_id || 1;
 
   try {
-    const cluster = await db.get(`SELECT * FROM ticket_clusters WHERE id = ?`, id);
+    const cluster = await db.get(`SELECT * FROM ticket_clusters WHERE id = ? AND company_id = ?`, id, companyId);
     if (!cluster) return res.status(404).json({ error: 'Cluster not found' });
 
     const members = await db.all(
@@ -77,9 +82,9 @@ router.post('/:id/bulk-resolve', authenticate, requireRole('it_staff', 'admin'),
         `UPDATE tickets
          SET status = 'resolved', resolved_at = NOW(), updated_at = NOW(),
              resolution_report = ?
-         WHERE id = ? AND status NOT IN ('resolved', 'closed')`,
+         WHERE id = ? AND status NOT IN ('resolved', 'closed') AND company_id = ?`,
         resolution || `Resolved as part of cluster: ${cluster.title}`,
-        ticket_id
+        ticket_id, companyId
       );
       // Log history
       await db.run(
@@ -104,6 +109,7 @@ router.post('/:id/bulk-resolve', authenticate, requireRole('it_staff', 'admin'),
 // POST /api/clusters/analyze — ATLAS groups open tickets into clusters
 router.post('/analyze', authenticate, requireRole('it_staff', 'admin'), async (req, res) => {
   const MODEL = 'claude-sonnet-4-20250514';
+  const companyId = req.user.company_id || 1;
   const keyPreview = process.env.ANTHROPIC_API_KEY
     ? process.env.ANTHROPIC_API_KEY.slice(0, 10) + '...'
     : 'NOT SET';
@@ -114,9 +120,10 @@ router.post('/analyze', authenticate, requireRole('it_staff', 'admin'), async (r
     const openTickets = await db.all(
       `SELECT id, title, description, category
        FROM tickets
-       WHERE status IN ('open', 'in_progress')
+       WHERE status IN ('open', 'in_progress') AND company_id = ?
        ORDER BY created_at DESC
-       LIMIT 100`
+       LIMIT 100`,
+      companyId
     );
     console.log('[Clusters] step 1 done: found', openTickets.length, 'open tickets');
 
@@ -171,8 +178,8 @@ Return ONLY the JSON array, no other text.`
     const created = [];
     for (const c of proposed) {
       const result = await db.run(
-        `INSERT INTO ticket_clusters (title, description, category) VALUES (?, ?, ?)`,
-        c.title, c.description, c.category
+        `INSERT INTO ticket_clusters (title, description, category, company_id) VALUES (?, ?, ?, ?)`,
+        c.title, c.description, c.category, companyId
       );
       const clusterId = result.lastInsertRowid;
       console.log('[Clusters] inserted cluster id:', clusterId, 'title:', c.title, 'tickets:', c.ticket_ids);

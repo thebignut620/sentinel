@@ -1,8 +1,8 @@
 import nodemailer from 'nodemailer';
 import db from '../db/connection.js';
 
-async function getTransporter() {
-  const rows = await db.all("SELECT key, value FROM settings WHERE key LIKE 'smtp_%'");
+async function getTransporter(companyId = 1) {
+  const rows = await db.all("SELECT key, value FROM settings WHERE company_id = ? AND key LIKE 'smtp_%'", companyId);
   const cfg = Object.fromEntries(rows.map(r => [r.key, r.value]));
   if (!cfg.smtp_host || !cfg.smtp_user) {
     console.warn('[email] SMTP not configured — smtp_host or smtp_user missing from settings table. Email will not send.');
@@ -17,8 +17,8 @@ async function getTransporter() {
   });
 }
 
-async function getConfig() {
-  const rows = await db.all('SELECT key, value FROM settings');
+async function getConfig(companyId = 1) {
+  const rows = await db.all('SELECT key, value FROM settings WHERE company_id = ?', companyId);
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
@@ -110,11 +110,11 @@ function emailInfoBox(rows) {
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0d0d0d;border:1px solid #1f2937;border-radius:10px;overflow:hidden;margin:20px 0;">${inner}</table>`;
 }
 
-export async function sendTicketStatusEmail({ to, name, ticketId, title, newStatus }) {
+export async function sendTicketStatusEmail({ to, name, ticketId, title, newStatus, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
     const statusLabel = newStatus.replace('_', ' ');
     const isResolved = ['resolved', 'closed'].includes(newStatus);
@@ -157,11 +157,11 @@ export async function sendTicketStatusEmail({ to, name, ticketId, title, newStat
   }
 }
 
-export async function sendWeeklyReport({ to, name, report, stats }) {
+export async function sendWeeklyReport({ to, name, report, stats, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
 
     const topCatsHtml = stats.topCategories.length
@@ -227,11 +227,11 @@ export async function sendWeeklyReport({ to, name, report, stats }) {
   }
 }
 
-export async function sendGoogleTempPassword({ to, name, tempPassword, ticketId }) {
+export async function sendGoogleTempPassword({ to, name, tempPassword, ticketId, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
     await transporter.sendMail({
       from: cfg.smtp_from || cfg.smtp_user,
@@ -262,11 +262,11 @@ export async function sendGoogleTempPassword({ to, name, tempPassword, ticketId 
   }
 }
 
-export async function sendMicrosoftTempPassword({ to, name, tempPassword, ticketId }) {
+export async function sendMicrosoftTempPassword({ to, name, tempPassword, ticketId, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
     await transporter.sendMail({
       from: cfg.smtp_from || cfg.smtp_user,
@@ -297,11 +297,11 @@ export async function sendMicrosoftTempPassword({ to, name, tempPassword, ticket
   }
 }
 
-export async function sendSatisfactionSurvey({ to, name, ticketId, ticketTitle, token }) {
+export async function sendSatisfactionSurvey({ to, name, ticketId, ticketTitle, token, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
     const surveyUrl = `${BASE_URL}/survey/${token}`;
     await transporter.sendMail({
@@ -341,11 +341,11 @@ export async function sendSatisfactionSurvey({ to, name, ticketId, ticketTitle, 
   }
 }
 
-export async function sendMonthlyReport({ to, name, reportText, stats, pdfBuffer }) {
+export async function sendMonthlyReport({ to, name, reportText, stats, pdfBuffer, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
 
     const { ticketStats = {}, monthKey = '' } = stats || {};
@@ -404,11 +404,11 @@ export async function sendMonthlyReport({ to, name, reportText, stats, pdfBuffer
   }
 }
 
-export async function sendIncidentAlert({ to, name, title, description, category, count, companyName }) {
+export async function sendIncidentAlert({ to, name, title, description, category, count, companyName, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = companyName || cfg.company_name || 'Sentinel IT';
     const appUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
     await transporter.sendMail({
@@ -443,11 +443,11 @@ export async function sendIncidentAlert({ to, name, title, description, category
   }
 }
 
-export async function sendPredictionBriefing({ to, name, briefingText, patterns, companyName }) {
+export async function sendPredictionBriefing({ to, name, briefingText, patterns, companyName, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = companyName || cfg.company_name || 'Sentinel IT';
     const appUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:5173';
 
@@ -499,15 +499,15 @@ export async function sendPredictionBriefing({ to, name, briefingText, patterns,
   }
 }
 
-export async function sendPasswordResetEmail({ to, name, token }) {
+export async function sendPasswordResetEmail({ to, name, token, companyId = 1 }) {
   console.log('[email:password-reset] attempting to send to:', to);
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) {
       console.warn('[email:password-reset] no transporter — SMTP not configured. Configure smtp_host, smtp_user, smtp_pass in Admin → Settings.');
       return;
     }
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const company = cfg.company_name || 'Sentinel IT';
     const resetUrl = `${BASE_URL}/reset-password/${token}`;
 
@@ -542,11 +542,11 @@ export async function sendPasswordResetEmail({ to, name, token }) {
   }
 }
 
-export async function sendWelcomeEmail({ to, name, companyName, trialEnd }) {
+export async function sendWelcomeEmail({ to, name, companyName, trialEnd, companyId = 1 }) {
   try {
-    const transporter = await getTransporter();
+    const transporter = await getTransporter(companyId);
     if (!transporter) return;
-    const cfg = await getConfig();
+    const cfg = await getConfig(companyId);
     const trialDate = new Date(trialEnd).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     const dashUrl = `${BASE_URL}/dashboard`;
 
