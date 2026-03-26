@@ -43,6 +43,7 @@ import automationRoutes from './routes/automations.js';
 import sandboxRoutes from './routes/sandbox.js';
 import timeTrackingRoutes from './routes/time-tracking.js';
 import ticketRelationsRoutes from './routes/ticket-relations.js';
+import sessionsRoutes from './routes/sessions.js';
 import { authenticate } from './middleware/auth.js';
 import { sanitizeBody } from './middleware/sanitize.js';
 import { apiLimiter } from './middleware/rateLimiter.js';
@@ -149,6 +150,7 @@ app.use('/api/automations', authenticate, automationRoutes);
 app.use('/api/sandbox', authenticate, sandboxRoutes);
 app.use('/api', authenticate, timeTrackingRoutes);
 app.use('/api', authenticate, ticketRelationsRoutes);
+app.use('/api/sessions', authenticate, sessionsRoutes);
 
 // ─── Global error handler — never expose internals ────────────────────────────
 app.use((err, req, res, _next) => {

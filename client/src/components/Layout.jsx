@@ -414,6 +414,7 @@ export default function Layout() {
       { to: '/dashboard',              icon: ICONS.dashboard,   label: 'Dashboard' },
       { to: '/tickets',                icon: ICONS.tickets,     label: 'All Tickets' },
       { to: '/admin/analytics',        icon: ICONS.analytics,   label: 'Analytics' },
+      { to: '/admin/sessions',         icon: ICONS.analytics,   label: 'Session History' },
       { to: '/admin/settings',         icon: ICONS.settings,    label: 'Settings' },
       { section: 'ATLAS' },
       { to: '/knowledge-base',         icon: ICONS.kb,          label: 'Knowledge Base' },

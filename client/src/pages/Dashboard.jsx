@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useToast } from '../contexts/ToastContext.jsx';
 import { StatusBadge, PriorityBadge } from '../components/Badges.jsx';
 import { SkeletonStatCards, SkeletonCard } from '../components/Skeleton.jsx';
 import api from '../api/client.js';
@@ -276,12 +277,118 @@ function HealthScoreWidget() {
   );
 }
 
+// ── Start Session Modal ───────────────────────────────────────────────────────
+function StartSessionModal({ onClose, onSuccess }) {
+  const [sessionName, setSessionName] = useState('');
+  const [password, setPassword]       = useState('');
+  const [error, setError]             = useState('');
+  const [saving, setSaving]           = useState(false);
+  const passwordRef = useRef(null);
+
+  useEffect(() => { passwordRef.current?.focus(); }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (!password) { setError('Password is required.'); return; }
+    setSaving(true);
+    try {
+      const { data } = await api.post('/sessions/start', {
+        password,
+        name: sessionName.trim() || undefined,
+      });
+      onSuccess(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to start session. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md shadow-2xl">
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-9 w-9 rounded-xl bg-pine-900/60 border border-pine-800/40 flex items-center justify-center text-pine-400 shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-white font-semibold text-base">Start Fresh Session</h2>
+              <p className="text-gray-500 text-xs">Reset your reporting window</p>
+            </div>
+          </div>
+
+          <div className="bg-gray-800/60 border border-gray-700/60 rounded-xl p-4 mb-5 text-sm text-gray-400 leading-relaxed">
+            Starting a new session gives you a clean reporting window — like pressing reset on a scoreboard.
+            <strong className="text-gray-300"> Nothing is deleted.</strong> All tickets, history, and analytics are preserved.
+            Session History lets you compare performance across time periods.
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5 font-medium">Session Name <span className="text-gray-600">(optional)</span></label>
+              <input
+                type="text"
+                value={sessionName}
+                onChange={e => setSessionName(e.target.value)}
+                placeholder={`e.g. Q2 2026 or Post-migration`}
+                className="input w-full"
+                maxLength={100}
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5 font-medium">Confirm your password</label>
+              <input
+                ref={passwordRef}
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter your password"
+                className="input w-full"
+                autoComplete="current-password"
+              />
+            </div>
+
+            {error && (
+              <div className="text-sm text-red-400 bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-1">
+              <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2 text-sm" disabled={saving}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary flex-1 py-2 text-sm flex items-center justify-center gap-2" disabled={saving}>
+                {saving ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                ) : null}
+                {saving ? 'Starting…' : 'Start Session'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 export default function Dashboard() {
   const { user } = useAuth();
+  const { addToast } = useToast();
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]   = useState(null);
+  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [currentSession, setCurrentSession]     = useState(null);
 
   useEffect(() => {
     console.log('[Dashboard] fetching /dashboard for role:', user?.role);
@@ -296,6 +403,13 @@ export default function Dashboard() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (user?.role === 'employee') return;
+    api.get('/sessions').then(r => {
+      if (r.data?.length > 0) setCurrentSession(r.data[0]);
+    }).catch(() => {});
+  }, [user?.role]);
 
   const ticketsLink = user.role === 'employee' ? '/my-tickets' : '/tickets';
 
@@ -328,8 +442,20 @@ export default function Dashboard() {
     );
   }
 
+  const handleSessionSuccess = (session) => {
+    setCurrentSession(session);
+    setShowSessionModal(false);
+    addToast(`Session "${session.name}" started successfully.`, 'success');
+  };
+
   return (
     <div className="space-y-6 animate-fadeIn relative">
+      {showSessionModal && (
+        <StartSessionModal
+          onClose={() => setShowSessionModal(false)}
+          onSuccess={handleSessionSuccess}
+        />
+      )}
       {/* Dot grid background */}
       <div className="fixed inset-0 dot-grid opacity-30 pointer-events-none" />
       {/* Welcome */}
@@ -337,10 +463,19 @@ export default function Dashboard() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-white">{greeting}, {user.name.split(' ')[0]} 👋</h1>
           <p className="text-gray-500 text-xs sm:text-sm mt-0.5 capitalize">{user.role.replace('_', ' ')} · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+          {/* Current session indicator — admin/staff only */}
+          {currentSession && (
+            <p className="text-xs text-pine-500 mt-0.5 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="3" fill="currentColor" />
+              </svg>
+              {currentSession.name} · started {new Date(currentSession.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </p>
+          )}
         </div>
 
         {/* Quick actions */}
-        <div className="flex gap-2 flex-wrap w-full sm:w-auto">
+        <div className="flex gap-2 flex-wrap w-full sm:w-auto items-center">
           {user.role === 'employee' ? (
             <>
               <Link to="/help" className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5 flex-1 sm:flex-none justify-center">
@@ -358,6 +493,15 @@ export default function Dashboard() {
               <Link to="/tickets?priority=critical" className="btn-secondary px-4 py-2 text-sm flex-1 sm:flex-none text-center">
                 Critical
               </Link>
+              <button
+                onClick={() => setShowSessionModal(true)}
+                title="Start a fresh session"
+                className="p-2 text-gray-500 hover:text-gray-300 hover:bg-gray-800 rounded-lg transition-colors border border-gray-800 hover:border-gray-700"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
             </>
           )}
         </div>

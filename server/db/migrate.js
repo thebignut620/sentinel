@@ -466,6 +466,14 @@ export async function runMigrations() {
       created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`,
+    `CREATE TABLE IF NOT EXISTS sessions (
+      id          SERIAL PRIMARY KEY,
+      company_id  INTEGER NOT NULL DEFAULT 1,
+      name        TEXT NOT NULL DEFAULT 'New Session',
+      started_by  INTEGER NOT NULL REFERENCES users(id),
+      started_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      notes       TEXT
+    )`,
   ];
 
   for (const sql of tables) {
